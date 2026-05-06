@@ -27,8 +27,8 @@ Desktop.ini
 
 # Project-specific
 .env
+data/
 wiki-data/
-data/ra-back/
 *.egg-info/
 dist/
 build/
