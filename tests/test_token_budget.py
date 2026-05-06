@@ -1,12 +1,11 @@
 import pytest
 
-from app.core.token_budget import CharLimitError, ContextBudget
+from app.core.token_budget import CharLimitError, ContextBudget, count_chars
 
 
 class TestContextBudget:
     def test_count_chars(self):
-        budget = ContextBudget()
-        assert budget.count_chars("hello") == 5
+        assert count_chars("hello") == 5
 
     def test_trim_within_limit(self):
         budget = ContextBudget()

@@ -22,6 +22,7 @@ from pathlib import Path
 import frontmatter  # python-frontmatter
 
 from app.config import Settings
+from app.core.utils import extract_wikilinks, heading_to_anchor
 
 logger = logging.getLogger("wiki.fs")
 
@@ -106,22 +107,14 @@ class WikiPage:
 
     @property
     def wikilinks(self) -> list[str]:
-        """Extract all [[slug]] and [[slug|text]] from content."""
-        return re.findall(r"\[\[([^\]|#]+)(?:[|#][^\]]+)?\]\]", self.content)
+        """Extract all [[slug]], [[slug|text]], [[slug#anchor]] from content."""
+        return extract_wikilinks(self.content)
 
     @property
     def anchors(self) -> set[str]:
         """All heading-based anchors in this page."""
         headings = re.findall(r"^#{1,6}\s+(.+)$", self.content, re.MULTILINE)
-        return {self._heading_to_anchor(h) for h in headings}
-
-    @staticmethod
-    def _heading_to_anchor(heading: str) -> str:
-        anchor = heading.lower().strip()
-        anchor = re.sub(r"[`*_\[\]()]", "", anchor)
-        anchor = re.sub(r"[^\w\s-]", "", anchor)
-        anchor = re.sub(r"\s+", "-", anchor)
-        return anchor.strip("-")
+        return {heading_to_anchor(h) for h in headings}
 
 
 @dataclass
@@ -369,12 +362,13 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         if len(raw) > limit:
             raise CharLimitExceededError(path, len(raw), limit)
 
+        is_new = not path.exists()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(raw, encoding="utf-8")
 
         self._update_index_entry(slug, meta)
 
-        action = "updated" if allow_overwrite and path.exists() else "created"
+        action = "created" if is_new else "updated"
         logger.info("Page %s: slug=%s chars=%d", action, slug, len(raw))
 
         return self._parse_page(path, slug)
@@ -533,7 +527,7 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         section_header = f"## {section}"
 
         if section_header in content:
-            # Insert after section header
+            # Insert after section header (newest skills first — reverse chronological)
             content = content.replace(
                 section_header,
                 f"{section_header}\n{entry}",
@@ -620,7 +614,10 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         return mapping.get(page_type, self.limits.entity_page_chars)
 
     def _update_index_entry(self, slug: str, meta: dict) -> None:
-        """Rebuild index.md statistics line. Full rebuild is cheap at Phase 1."""
+        """Rebuild index.md statistics line. Full rebuild is cheap at Phase 1.
+        TODO: at scale, cache page list — currently O(N²) during rebuild
+        since list_pages() is called on every write_page().
+        """
         pages = self.list_pages()
         projects = {p.project for p in pages}
         open_conf = self.count_open_conflicts()

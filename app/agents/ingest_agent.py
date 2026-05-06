@@ -264,7 +264,7 @@ class IngestAgent:
         self.llm = llm
         self.interpreter = interpreter
         self.settings = settings
-        self.budget = ContextBudget()
+        self.budget = ContextBudget(settings)
 
     # ── Public entrypoint ────────────────────────────────────────
 
@@ -311,9 +311,9 @@ class IngestAgent:
                 conflicts_detected=conflict_ids,
                 skills_triggered=analysis.skills_triggered,
                 char_delta=sum(
-                    len(self.fs.read_page(s).raw)
+                    len(p.raw)
                     for s in pages_created + pages_updated
-                    if self.fs.read_page(s)
+                    if (p := self.fs.read_page(s))
                 ),
             )
             self.fs.append_log(log_entry)
@@ -370,7 +370,7 @@ class IngestAgent:
             source_file=source_file,
             project=project,
             source_content=self.budget.trim(source_content, "wiki_context"),
-            wiki_context=self.budget.trim(wiki_context, "history"),
+            wiki_context=wiki_context,
             max_pages=self.settings.ingest.max_pages_per_source,
             schema=_ANALYSIS_SCHEMA_HINT,
         )
@@ -391,29 +391,34 @@ class IngestAgent:
     ) -> list[WikiPage]:
         code = f"""
 import re
+import json
 from pathlib import Path
 
+wiki_dir = Path({str(self.fs.wiki_dir)!r})
 source = {source_content[:3000]!r}
-project_filter = {project!r}
 
 # Extract significant words from source (length > 4, not stopwords)
 stopwords = {{'this', 'that', 'with', 'from', 'have', 'will', 'been',
               'they', 'their', 'what', 'when', 'also', 'into', 'more'}}
 words = set(
-    w.lower() for w in re.findall(r'\\b[a-zA-Z]{{5,}}\\b', source)
+    w.lower() for w in re.findall(r'\\b[a-zA-Zа-яА-Я]{{5,}}\\b', source)
     if w.lower() not in stopwords
 )
 
 candidates = []
-for md in WIKI_ROOT.rglob("*.md"):
-    text = md.read_text(encoding="utf-8").lower()
-    overlap = sum(1 for w in words if w in text)
-    rel = md.relative_to(WIKI_ROOT / "wiki").with_suffix("").as_posix()
-    candidates.append((rel, overlap))
+for md in wiki_dir.rglob("*.md"):
+    try:
+        text = md.read_text(encoding="utf-8").lower()
+        overlap = sum(1 for w in words if w in text)
+        rel = md.relative_to(wiki_dir).with_suffix("").as_posix()
+        candidates.append((rel, overlap))
+    except Exception:
+        pass
 
 # Sort by overlap, return top 5
 result = [slug for slug, score in sorted(candidates, key=lambda x: -x[1])[:5]
           if score > 0]
+print(json.dumps(result))
 """
         output = self.interpreter.execute(code)
         slugs: list[str] = output.result_json or []

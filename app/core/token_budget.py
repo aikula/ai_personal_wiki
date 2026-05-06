@@ -52,10 +52,6 @@ class ContextBudget:
             self.wiki_context = settings.query.context_budget_chars
             self.history = settings.query.history_budget_chars
 
-    def count_chars(self, text: str) -> int:
-        """Return character count. Simple len()."""
-        return len(text)
-
     def trim(self, text: str, slot: str) -> str:
         """
         Trim text to slot budget.

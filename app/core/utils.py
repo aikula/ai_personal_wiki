@@ -52,3 +52,12 @@ def extract_wikilinks(text: str) -> list[str]:
 def now_iso() -> str:
     """Current datetime as ISO-8601 string, seconds precision."""
     return datetime.now().isoformat(timespec="seconds")
+
+
+def heading_to_anchor(heading: str) -> str:
+    """Convert markdown heading text to GitHub-style anchor slug."""
+    anchor = heading.lower().strip()
+    anchor = re.sub(r"[`*_\[\]()]", "", anchor)
+    anchor = re.sub(r"[^\w\s-]", "", anchor)
+    anchor = re.sub(r"\s+", "-", anchor)
+    return anchor.strip("-")

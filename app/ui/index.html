@@ -782,6 +782,7 @@ function WikiPanel({ highlightedSlug, onPageOpen }) {
   const [searchResults, setSearchResults] = useState(null);
   const [activePage, setActivePage] = useState(null);
   const [pageData, setPageData] = useState(null);
+  const [pageNotFound, setPageNotFound] = useState(null);
   const [tab, setTab] = useState('wiki'); // 'wiki' | 'conflicts'
 
   const loadTree = async () => {
@@ -796,10 +797,23 @@ function WikiPanel({ highlightedSlug, onPageOpen }) {
 
   const openPage = async (slug) => {
     setActivePage(slug);
+    setPageNotFound(null);
     try {
-      setPageData(await api.get(`/wiki/page/${slug}`));
+      const data = await api.get(`/wiki/page/${slug}`);
+      // Post-process: convert any remaining [[slug]] to clickable links
+      if (data.content_html) {
+        data.content_html = data.content_html.replace(
+          /\[\[([^\]|#]+)(?:\|([^\]]+))?\]\]/g,
+          (_, s, label) => {
+            const display = label || s.split('/').pop().replace(/-/g, ' ');
+            return `<a href="#wiki/${s}" class="wikilink">${display}</a>`;
+          }
+        );
+      }
+      setPageData(data);
     } catch(e) {
       setPageData(null);
+      setPageNotFound(slug);
     }
   };
 
@@ -919,6 +933,36 @@ function WikiPanel({ highlightedSlug, onPageOpen }) {
                        if (slug) openPage(slug);
                      }
                    }} />
+            </div>
+          )}
+
+          {!pageData && pageNotFound && (
+            <div className="page-viewer" style={{flex:1, display:'flex', flexDirection:'column',
+              alignItems:'center', justifyContent:'center', gap:12, color:'var(--text-dim)'}}>
+              <div style={{fontSize:32}}>📄</div>
+              <div style={{fontSize:14, color:'var(--text)'}}>Page not found</div>
+              <div style={{fontSize:12}}>{pageNotFound}</div>
+              <div style={{fontSize:12}}>This page is referenced by a [[wikilink]] but hasn't been created yet.</div>
+            </div>
+          )}
+
+          {!pageData && pageNotFound && (
+            <div className="page-viewer" style={{flex:1, display:'flex', flexDirection:'column',
+              alignItems:'center', justifyContent:'center', gap:12, color:'var(--text-dim)'}}>
+              <div style={{fontSize:32}}>📄</div>
+              <div style={{fontSize:14, color:'var(--text)'}}>Page not found</div>
+              <div style={{fontSize:12}}>{pageNotFound}</div>
+              <div style={{fontSize:12}}>This page is referenced by a [[wikilink]] but hasn't been created yet.</div>
+            </div>
+          )}
+
+          {!pageData && pageNotFound && (
+            <div className="page-viewer" style={{flex:1, display:'flex', flexDirection:'column',
+              alignItems:'center', justifyContent:'center', gap:12, color:'var(--text-dim)'}}>
+              <div style={{fontSize:32}}>📄</div>
+              <div style={{fontSize:14, color:'var(--text)'}}>Page not found</div>
+              <div style={{fontSize:12}}>{pageNotFound}</div>
+              <div style={{fontSize:12}}>This page is referenced by a [[wikilink]] but hasn't been created yet.</div>
             </div>
           )}
         </>
@@ -1099,6 +1143,7 @@ function App() {
             } else if (ev.type === 'cited') {
               cited.push(ev.slug);
               setHighlightedSlug(ev.slug);
+              setRightOpen(true);
             } else if (ev.type === 'done') {
               setMessages(m => m.map(x => x._streaming
                 ? { ...x, content: fullAnswer, cited_slugs: cited, _streaming: false } : x));
@@ -1130,6 +1175,12 @@ function App() {
       if (res.slug) setHighlightedSlug(res.slug);
     } catch(e) { toast(`Failed: ${e.message}`, 'error'); }
   };
+
+  // ── Slug click handler ───────────────────────
+  const handleSlugClick = useCallback((slug) => {
+    setHighlightedSlug(slug);
+    setRightOpen(true);
+  }, []);
 
   // ── Render ───────────────────────────────────
 
@@ -1225,7 +1276,7 @@ function App() {
                       </div>
                     </div>
                   </div>
-                : <Message key={i} msg={msg} onSlugClick={setHighlightedSlug} />
+                : <Message key={i} msg={msg} onSlugClick={handleSlugClick} />
             ))}
             <div ref={messagesEndRef} />
           </div>

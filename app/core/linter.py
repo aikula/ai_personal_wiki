@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from app.config import Settings
+from app.core.utils import heading_to_anchor
 from app.core.wiki_fs import WikiFS, WikiPage
 
 # ─────────────────────────────────────────────
@@ -155,6 +156,8 @@ class WikiLinter:
 
     def _check_frontmatter(self, page: WikiPage) -> list[LintIssue]:
         issues = []
+        # supersedes/superseded_by are nullable — validated separately
+        # in _check_superseded_active, not here
         required = {
             "title": str,
             "project": str,
@@ -360,13 +363,6 @@ class WikiLinter:
 # ─────────────────────────────────────────────
 # Helpers (module-level)
 # ─────────────────────────────────────────────
-
-def _heading_to_anchor(heading: str) -> str:
-    anchor = heading.lower().strip()
-    anchor = re.sub(r"[`*_\[\]()]", "", anchor)
-    anchor = re.sub(r"[^\w\s-]", "", anchor)
-    anchor = re.sub(r"\s+", "-", anchor)
-    return anchor.strip("-")
 
 
 def _extract_excerpt(content: str, word: str, window: int = 120) -> str:
