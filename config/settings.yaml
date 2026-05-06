@@ -1,0 +1,37 @@
+# config/settings.yaml
+# Значения по умолчанию. Env vars имеют приоритет над yaml.
+
+llm:
+  base_url: "https://api.openai.com/v1"
+  api_key: ""
+  model: "gpt-4o"
+  temperature: 0.1
+  timeout_seconds: 60
+
+wiki_data_path: "./wiki-data"
+
+limits:
+  agents_md_chars:    4200
+  skills_md_chars:    8750
+  index_l0_chars:     10500
+  index_l1_chars:     5250
+  entity_page_chars:  3500
+  concept_page_chars: 5250
+  log_md_chars:       3500
+  conflicts_md_chars: 35000
+
+ingest:
+  two_step: true
+  max_pages_per_source: 10
+  auto_lint_after_ingest: true
+  conflict_continue_on_detect: true
+
+query:
+  context_budget_chars: 21000
+  max_wiki_pages_in_context: 6
+  history_budget_chars: 7000
+
+audit:
+  confidence_warn_threshold: 0.4
+  stale_days_threshold: 90
+  run_llm_audit_default: false
