@@ -628,14 +628,18 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         if index_page is None:
             return
 
-        # Update stats line
-        new_content = re.sub(
-            r"Last updated:.*",
+        # Update stats block (replaces entire block to avoid accumulation)
+        stats_block = (
             f"Last updated: {today}\n"
             f"Pages: {len(pages)} | "
             f"Projects: {len(projects)} | "
-            f"Open conflicts: {open_conf}",
+            f"Open conflicts: {open_conf}"
+        )
+        new_content = re.sub(
+            r"Last updated:.*?Open conflicts: \d+",
+            stats_block,
             index_page.content,
+            flags=re.DOTALL,
         )
 
         # Rebuild project section if project not yet listed
