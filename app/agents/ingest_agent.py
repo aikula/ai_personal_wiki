@@ -639,9 +639,15 @@ print(json.dumps(result))
 
     def rebuild_from_scratch(self, progress_callback=None) -> dict:
         logger.info("Rebuild started")
-        self.fs.full_reset_wiki()
 
         raw_files = self.fs.list_raw_files()
+
+        # Remove OPEN conflicts for raw files that no longer exist
+        removed = self.fs.cleanup_orphan_conflicts(raw_files)
+        if removed:
+            logger.info("Rebuild: removed %d orphan conflicts", removed)
+
+        self.fs.full_reset_wiki()
         raw_files.sort(key=lambda p: (
             "0" if self.fs.get_raw_project(p) == "_general" else "1",
             str(p)

@@ -584,6 +584,54 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         (self.wiki_dir / "log.md").write_text("# Change Log\n\n", encoding="utf-8")
         logger.info("Wiki directory re-bootstrapped: %s", self.wiki_dir)
 
+    def cleanup_orphan_conflicts(self, existing_raw_files: list[Path]) -> int:
+        """Remove OPEN conflicts whose source_file no longer exists in raw/.
+        RESOLVED conflicts are kept (their skills are already in skills.md).
+        Returns number of removed conflicts.
+        """
+        existing: set[str] = set()
+        for p in existing_raw_files:
+            rel = p.relative_to(self.raw_dir)
+            existing.add(str(rel).replace("\\", "/"))
+            existing.add(str(rel))  # backslash variant for Windows
+
+        content = self.read_conflicts_raw()
+        parts = re.split(r"\n---\n", content)
+
+        removed = 0
+        kept = []
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+
+            is_open = "## [OPEN]" in part
+            if not is_open:
+                kept.append(part)
+                continue
+
+            match = re.search(r"- \*\*Source file:\*\* (.+)", part)
+            if match:
+                source_file = match.group(1).strip().replace("\\", "/")
+                if source_file in existing:
+                    kept.append(part)
+                else:
+                    removed += 1
+                    logger.info(
+                        "Removing orphan conflict for missing raw file: %s",
+                        source_file,
+                    )
+            else:
+                kept.append(part)
+
+        if removed > 0:
+            new_content = "\n\n---\n\n".join(kept) + "\n"
+            path = self.root / "conflicts.md"
+            path.write_text(new_content, encoding="utf-8")
+            logger.info("Removed %d orphan conflicts", removed)
+
+        return removed
+
     # ── Internal helpers ─────────────────────────────────────────
 
     def _slug_to_path(self, slug: str) -> Path:
