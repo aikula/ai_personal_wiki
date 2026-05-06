@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+  wiki-engine:
+    build: .
+    container_name: wiki-engine
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Wiki data: persisted on host, survives container rebuild
+      - ./wiki-data:/wiki-data
+      # Live code reload in dev (comment out for production)
+      - ./app:/app/app
+      - ./config:/app/config
+    environment:
+      # LLM config — override here or in .env file
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LLM_BASE_URL:   ${LLM_BASE_URL:-https://api.openai.com/v1}
+      LLM_MODEL:      ${LLM_MODEL:-gpt-4o}
+      WIKI_DATA_PATH: /wiki-data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    # Optional: limit resources
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 1G
