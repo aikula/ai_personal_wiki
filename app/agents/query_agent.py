@@ -27,9 +27,22 @@ import json
 import logging
 import re
 from collections.abc import Generator
-from dataclasses import dataclass, field
 from datetime import date
 
+from app.agents.query_prompts import (
+    ANSWER_PROMPT,
+    ANSWER_SYSTEM,
+    CLASSIFY_PROMPT,
+    CRYSTALLIZE_PROMPT,
+    REACT_PROMPT,
+    REACT_SYSTEM,
+)
+from app.agents.query_types import (
+    QUESTION_TYPES,
+    ChatMessage,
+    ChatSession,
+    QueryResult,
+)
 from app.config import Settings
 from app.core.interpreter import CodeInterpreter
 from app.core.llm_client import LLMClient
@@ -39,172 +52,6 @@ from app.core.wiki_fs import WikiFS, WikiPage
 
 logger = logging.getLogger("wiki.query")
 
-
-# ─────────────────────────────────────────────
-# Data models
-# ─────────────────────────────────────────────
-
-QUESTION_TYPES = {"factual", "comparison", "exploratory", "meta"}
-
-
-@dataclass
-class ChatMessage:
-    role: str        # "user" | "assistant" | "tool"
-    content: str
-    timestamp: str = ""
-    cited_slugs: list[str] = field(default_factory=list)
-    # slugs mentioned in this message as [[...]] links
-
-
-@dataclass
-class ChatSession:
-    session_id: str
-    created_at: str
-    messages: list[ChatMessage] = field(default_factory=list)
-    project_filter: str | None = None
-    # None = search all projects
-
-    def to_llm_messages(self, budget_chars: int) -> list[dict]:
-        """
-        Convert history to OpenAI message format.
-        Trims oldest messages to fit budget.
-        """
-        result = []
-        total = 0
-        # Iterate newest first, keep what fits
-        for msg in reversed(self.messages):
-            if msg.role == "tool":
-                continue  # don't send tool internals to chat history
-            entry = {"role": msg.role, "content": msg.content}
-            total += len(msg.content)
-            if total > budget_chars:
-                break
-            result.insert(0, entry)
-        return result
-
-
-@dataclass
-class QueryResult:
-    answer: str
-    cited_slugs: list[str]       # [[slug]] references in answer
-    question_type: str
-    pages_read: list[str]        # all slugs fetched during query
-    iterations: int              # ReAct iterations used (1 for fast paths)
-    session_id: str
-    crystallized_slug: str | None = None
-
-
-# ─────────────────────────────────────────────
-# Prompts
-# ─────────────────────────────────────────────
-
-CLASSIFY_PROMPT = """Classify this question into exactly one type:
-- factual: single specific fact, date, version, configuration value
-- comparison: comparing two things, projects, approaches, or implementations
-- exploratory: open-ended, requires exploring multiple topics
-- meta: question about wiki structure, stats, file counts, projects list
-
-Question: {question}
-
-Output JSON: {{"type": "factual"|"comparison"|"exploratory"|"meta",
-               "reasoning": str,
-               "keywords": [str]}}
-"""
-
-ANSWER_SYSTEM = """You are a wiki assistant. Answer questions using ONLY
-the wiki pages provided. Do not use external knowledge.
-
-LANGUAGE RULE (BINDING):
-- Answer in Russian.
-- Keep technical terms, product names, acronyms, and code in English.
-- Use Russian for explanations and prose.
-
-Rules (from skills.md — BINDING):
-{skills_query_rules}
-
-Citation rules (ALWAYS follow):
-- Cite every fact with [[slug]] immediately after the sentence
-- Format: "Redis используется для кеширования [[myapp/storage/redis]]."
-- If multiple pages support a fact: "...[[slug1]] [[slug2]]"
-- If projects differ: show both — label as "**ProjectA:** ..." and "**ProjectB:** ..."
-- Never pick a winner between different project implementations
-- If answer not found in wiki: say explicitly "Не найдено в wiki."
-  Do NOT invent facts.
-"""
-
-ANSWER_PROMPT = """## Question
-{question}
-
-## Relevant Wiki Pages
-{wiki_context}
-
-## Answer the question. Use [[slug]] citations for every fact."""
-
-REACT_SYSTEM = """You are a wiki research agent with tools.
-Think step by step. Use tools to explore wiki until you can answer.
-Stop when you have enough information.
-
-LANGUAGE RULE (BINDING):
-- Final answer MUST be in Russian.
-- Keep technical terms, product names, acronyms in English.
-
-Available tools:
-- search_wiki: {{"query": str, "project": str|null}}
-  → returns list of matching page slugs and excerpts
-- read_page: {{"slug": str}}
-  → returns full page content
-- execute_code: {{"code": str, "reasoning": str}}
-  → runs Python in sandbox (WIKI_ROOT variable available)
-
-Output format for tool call:
-{{"action": "search_wiki"|"read_page"|"execute_code", "input": {{...}}}}
-
-Output format for final answer:
-{{"action": "answer", "content": str}}
-
-Rules:
-- Max {max_iterations} iterations
-- Always cite [[slug]] in final answer
-- If info not found after {max_iterations} iterations: say so explicitly
-"""
-
-REACT_PROMPT = """## Question
-{question}
-
-## Conversation so far
-{history}
-
-## What have you done so far this query
-{scratchpad}
-
-## Next action (JSON):"""
-
-CRYSTALLIZE_PROMPT = """Summarize this Q&A session as a wiki page.
-The page captures what was asked, what was found, and key insights.
-
-LANGUAGE RULE (BINDING):
-- Write the wiki page content in Russian.
-- Keep technical terms, product names, acronyms in English.
-
-Session:
-{session_text}
-
-Output JSON page:
-{{"meta": {{"title": str, "project": "_general", "type": "concept",
-            "tags": ["qa-session", ...],
-            "confidence": 0.9, "sources": int,
-            "last_confirmed": "{today}",
-            "supersedes": null, "superseded_by": null,
-            "created": "{today}"}},
- "content": str}}
-
-Keep content under 3500 chars. Focus on reusable insights.
-"""
-
-
-# ─────────────────────────────────────────────
-# QueryAgent
-# ─────────────────────────────────────────────
 
 class QueryAgent:
     """
@@ -255,7 +102,6 @@ class QueryAgent:
 
         cited = extract_wikilinks(answer)
 
-        # Append to session
         session.messages.append(ChatMessage(
             role="user",
             content=question,
@@ -284,13 +130,6 @@ class QueryAgent:
         question: str,
         session: ChatSession,
     ) -> Generator[str, None, None]:
-        """
-        Streaming version for SSE. Yields text chunks.
-        Yields special markers for UI:
-          [CITED:slug]  — page reference detected
-          [DONE]        — stream complete
-        """
-        # Meta: instant response
         if self._is_meta_question(question):
             result = self._handle_meta(question, session)
             yield result.answer
@@ -306,7 +145,7 @@ class QueryAgent:
             agents_md = self._read_agents_md()
 
             history = session.to_llm_messages(self.budget.history)
-            messages = history + [{"role": "user", "content": question}]
+            messages = [*history, {"role": "user", "content": question}]
 
             system = ANSWER_SYSTEM.format(skills_query_rules=skills)
             if agents_md:
@@ -335,7 +174,7 @@ class QueryAgent:
                 timestamp=now_iso(), cited_slugs=cited,
             ))
 
-        else:  # exploratory — ReAct doesn't stream mid-loop, yields at end
+        else:
             answer, _, _ = self._policy_react(question, session)
             yield answer
             for slug in extract_wikilinks(answer):
@@ -357,7 +196,6 @@ class QueryAgent:
         keywords: list[str],
         session: ChatSession,
     ) -> tuple[str, list[str], int]:
-        """Fast path: grep → read → answer. 2 LLM calls total."""
         pages = self._retrieve_pages(keywords, session.project_filter, top_k=4)
         wiki_context = self._build_wiki_context(pages)
 
@@ -372,19 +210,12 @@ class QueryAgent:
         keywords: list[str],
         session: ChatSession,
     ) -> tuple[str, list[str], int]:
-        """
-        Multi-project comparison: retrieve from all relevant projects,
-        then synthesize side-by-side.
-        """
-        # Retrieve without project filter to get all perspectives
         pages = self._retrieve_pages(keywords, project=None, top_k=6)
 
-        # Group by project
         by_project: dict[str, list[WikiPage]] = {}
         for p in pages:
             by_project.setdefault(p.project, []).append(p)
 
-        # Build context with project labels
         sections = []
         for proj, proj_pages in sorted(by_project.items()):
             content = "\n---\n".join(pp.raw for pp in proj_pages)
@@ -498,7 +329,6 @@ class QueryAgent:
         return any(s in q for s in meta_signals)
 
     def _handle_meta(self, question: str, session: ChatSession) -> QueryResult:
-        """Answer meta questions directly from WikiFS without LLM."""
         tree = self.fs.get_wiki_tree()
         projects = list(tree["projects"].keys())
         total = tree["total_pages"]
@@ -534,11 +364,6 @@ class QueryAgent:
     # ── Crystallization ──────────────────────────────────────────
 
     def crystallize_session(self, session: ChatSession) -> str | None:
-        """
-        Distill Q&A session into a wiki concept page.
-        Returns slug of created page, or None if session too short.
-        Minimum: 3 exchanges before crystallization makes sense.
-        """
         user_msgs = [m for m in session.messages if m.role == "user"]
         if len(user_msgs) < 3:
             return None
@@ -564,7 +389,6 @@ class QueryAgent:
             if not content:
                 return None
 
-            # Slug: queries/<session_id_short>
             short_id = session.session_id[:8]
             slug = f"_general/queries/session-{short_id}"
 
@@ -630,7 +454,7 @@ class QueryAgent:
         if agents_md:
             system = agents_md + "\n\n" + system
 
-        messages = history + [{
+            messages = [*history, {
             "role": "user",
             "content": ANSWER_PROMPT.format(
                 question=question,

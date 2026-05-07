@@ -387,3 +387,28 @@ For multi-step tasks, state a brief plan:
 ```
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+## 5. KISS & DRY
+
+**Keep It Simple, Stupid. Don't Repeat Yourself.**
+
+- Every piece of knowledge and logic must have a single, unambiguous representation in the system
+- If you write the same pattern twice, extract it on the third occurrence (Rule of Three)
+- No copy-pasted code. Ever. Shared logic goes into `app/core/utils.py`
+- Favor flat structure over nested: prefer early returns, guard clauses, and linear flow
+- A function should do one thing. If it has "and" in its name, split it.
+- Before adding a new dependency or abstraction, ask: "Can I do this with stdlib in 10 lines?"
+
+## 6. File Size Limit
+
+**No file should exceed 500 lines without a justified exception.**
+
+Exceptions (must be documented here):
+- `app/ui/index.html` (1346 lines) — single-file React app, cannot split by design
+- `app/core/wiki_fs.py` (1005 lines) — single source of truth for all filesystem ops; each method is a distinct public API
+
+All other files MUST stay under 500 lines. When modifying a file that exceeds the limit, prioritize splitting over adding code.
+
+No current violations. Resolved:
+- `app/agents/ingest_agent.py` 761→449 lines — split into `ingest_types.py` (52), `ingest_prompts.py` (109), `ingest_helpers.py` (121), `ingest_agent.py` (449)
+- `app/agents/query_agent.py` 542→404 lines — split into `query_types.py` (40), `query_prompts.py` (83), `query_agent.py` (404)
