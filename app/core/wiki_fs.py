@@ -172,6 +172,7 @@ class WikiFS:
         self.wiki_dir = self.root / "wiki"
         self.raw_dir = self.root / "raw"
         self.limits = settings.limits
+        self._defer_index = False
         self._ensure_structure()
 
     @property
@@ -916,6 +917,49 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         (self.wiki_dir / "log.md").write_text("# Change Log\n\n", encoding="utf-8")
         logger.info("Wiki directory re-bootstrapped: %s", self.wiki_dir)
 
+    def defer_index(self) -> None:
+        """Suppress index updates for batch operations (avoids O(N²))."""
+        self._defer_index = True
+
+    def resume_index(self) -> None:
+        """Re-enable index updates after batch operation."""
+        self._defer_index = False
+
+    def rebuild_index(self) -> None:
+        """Rebuild index.md from scratch from current wiki state."""
+        pages = self.list_pages()
+        projects = {p.project for p in pages}
+        open_conf = self.count_open_conflicts()
+        today = date.today().isoformat()
+
+        index_path = self.wiki_dir / "index.md"
+        index_page = self.read_page("index")
+        if index_page is None:
+            return
+
+        stats_block = (
+            f"Last updated: {today}\n"
+            f"Pages: {len(pages)} | "
+            f"Projects: {len(projects)} | "
+            f"Open conflicts: {open_conf}"
+        )
+        new_content = re.sub(
+            r"Last updated:.*?Open conflicts: \d+",
+            stats_block,
+            index_page.content,
+            flags=re.DOTALL,
+        )
+
+        for proj in projects:
+            if f"## {proj}" not in new_content:
+                new_content += f"\n## {proj}\n[[{proj}/index]] — project {proj}\n"
+
+        index_path.write_text(
+            frontmatter.dumps(frontmatter.Post(new_content, **index_page.meta)),
+            encoding="utf-8"
+        )
+        logger.info("Index rebuilt: pages=%d projects=%d", len(pages), len(projects))
+
     def cleanup_orphan_conflicts(self, existing_raw_files: list[Path]) -> int:
         """Remove OPEN conflicts whose source_file no longer exists in raw/.
         RESOLVED conflicts are kept (their skills are already in skills.md).
@@ -995,10 +1039,9 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         return mapping.get(page_type, self.limits.entity_page_chars)
 
     def _update_index_entry(self, slug: str, meta: dict) -> None:
-        """Rebuild index.md statistics line. Full rebuild is cheap at Phase 1.
-        TODO: at scale, cache page list — currently O(N²) during rebuild
-        since list_pages() is called on every write_page().
-        """
+        """Rebuild index.md statistics line. Skips if deferring (batch/rebuild)."""
+        if self._defer_index:
+            return
         pages = self.list_pages()
         projects = {p.project for p in pages}
         open_conf = self.count_open_conflicts()

@@ -213,7 +213,7 @@ class AuditAgent:
         self.fs = fs
         self.llm = llm
         self.settings = settings
-        self.budget = ContextBudget()
+        self.budget = ContextBudget(settings)
 
     # ── Public entrypoints ───────────────────────────────────────
 

@@ -701,6 +701,9 @@ print(json.dumps(result))
             logger.info("Rebuild: removed %d orphan conflicts", removed)
 
         self.fs.full_reset_wiki()
+
+        # Defer per-page index updates during rebuild (O(N²) → O(N))
+        self.fs.defer_index()
         raw_files.sort(key=lambda p: (
             "0" if self.fs.get_raw_project(p) == "_general" else "1",
             str(p)
@@ -734,6 +737,10 @@ print(json.dumps(result))
 
         logger.info("Rebuild complete: success=%d failed=%d conflicts=%d",
                      results["success"], results["failed"], len(results["conflict_ids"]))
+
+        self.fs.resume_index()
+        self.fs.rebuild_index()
+
         return results
 
     # ── Helpers ──────────────────────────────────────────────────
