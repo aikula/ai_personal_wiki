@@ -230,7 +230,7 @@ class QueryAgent:
         self.llm = llm
         self.interpreter = interpreter
         self.settings = settings
-        self.budget = ContextBudget()
+        self.budget = ContextBudget(settings)
         self.max_iterations = 5
 
     # ── Public: non-streaming ────────────────────────────────────
