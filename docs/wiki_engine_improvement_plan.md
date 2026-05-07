@@ -13,10 +13,10 @@ Wiki Engine should not be positioned as a generic RAG application. Its stronger 
 The core product loop is:
 
 ```text
-raw markdown sources -> generated wiki layer -> query/chat -> conflict resolution -> skills/rules -> better future ingest
+raw markdown sources -> generated wiki layer -> query/chat -> review/diff -> conflict resolution -> skills/rules -> better future ingest
 ```
 
-The highest-value architectural idea is the persistent wiki layer: answers, links, conflicts, and rules should accumulate instead of disappearing into chat history.
+The highest-value architectural idea is the persistent wiki layer: answers, links, conflicts, provenance, and rules should accumulate instead of disappearing into chat history.
 
 ---
 
@@ -33,6 +33,98 @@ Tracked in GitHub issue #1.
 
 ---
 
+## Architectural decision: no silent full-page overwrites
+
+### Problem
+
+The current ingest flow can ask the LLM to regenerate a full existing page and overwrite it when Step 1 chooses `action="update"` or `action="supersede"`. This is dangerous because the model can accidentally drop old information, blur source attribution, or hide contradictions.
+
+### Decision
+
+Existing pages must not be silently rewritten during ingest.
+
+Instead, update flow should become:
+
+```text
+new source
+-> analysis plan
+-> candidate page / candidate patch
+-> diff preview
+-> conflict/provenance report
+-> human approve / edit / reject
+-> apply write
+```
+
+### Target mechanism
+
+#### 1. Analysis plan
+
+Step 1 still produces:
+
+- pages_to_create;
+- pages_to_update;
+- pages_to_supersede;
+- conflicts;
+- related_pages_read;
+- analysis_notes.
+
+But this is now a plan, not permission to overwrite.
+
+#### 2. Candidate update generation
+
+For every planned update, Step 2 writes a draft artifact instead of overwriting `wiki/` directly:
+
+```text
+wiki-data/drafts/ingest-YYYYMMDD-HHMMSS/
+  plan.json
+  pages/
+    project/page.md
+  diffs/
+    project__page.diff.md
+  conflicts.json
+  provenance_report.md
+```
+
+#### 3. Diff-first update
+
+For an existing page, the system should produce:
+
+- old page raw markdown;
+- candidate new page markdown;
+- unified diff;
+- summary of semantic changes;
+- list of claims added/removed/changed;
+- affected wikilinks;
+- provenance coverage.
+
+#### 4. Apply only after approval
+
+UI actions:
+
+- Approve and apply;
+- Edit candidate and apply;
+- Reject;
+- Mark as needs follow-up;
+- Convert to conflict only.
+
+#### 5. Safe update policy before review UI exists
+
+Until review UI is implemented:
+
+- creates may still be written directly if low risk;
+- updates/supersedes should be stored as drafts or logged as pending review;
+- conflicts should still be recorded.
+
+### Acceptance criteria
+
+- Ingest no longer silently overwrites existing pages.
+- Every update candidate has a visible diff.
+- User can approve/reject page updates before applying.
+- Removed or changed claims are visible in the diff summary.
+- Conflicts remain separate from ordinary updates.
+
+---
+
 ## Workstreams
 
 ## 1. Cross-linking and knowledge graph quality
@@ -44,7 +136,7 @@ Generated wiki pages contain too few internal `[[slug]]` links. The project rule
 ### Root causes
 
 1. Step 2 generation only receives the planned page, source sections, and existing page content.
-2. Related page discovery is simple word-overlap and only returns a narrow context.
+2. Related page discovery is simple word-overlap and returns too narrow a context.
 3. The prompt asks the model to use links but does not provide a compact candidate list.
 4. The linter detects broken links but does not flag likely missing links.
 
@@ -54,7 +146,55 @@ Generated pages should consistently link known entities and concepts on first me
 
 ### Implementation plan
 
-#### 1.1 Add link candidate map
+#### 1.1 Add `## Related Pages` / `## Связанные страницы`
+
+Every normal `entity`, `concept`, `comparison`, and `synthesis` page should end with a related pages section:
+
+```markdown
+## Связанные страницы
+- [[project/foo]] — почему связано
+- [[_general/bar]] — общий концепт
+```
+
+Rules:
+
+- minimum 2 related pages for normal pages when candidates exist;
+- do not invent links just to satisfy the minimum;
+- link project-local pages first;
+- use `_general` for shared concepts;
+- no repeated links already used heavily in the body unless they are central.
+
+Lint should flag:
+
+- pages with no outgoing links;
+- pages with no `## Связанные страницы` section;
+- pages with related pages that do not exist.
+
+#### 1.2 Add `synopsis` or `## Synopsis`
+
+Every generated page should have a short routing summary.
+
+Preferred frontmatter field:
+
+```yaml
+synopsis: "2-3 sentence summary used for routing, search, and preview."
+```
+
+Visible section is also allowed:
+
+```markdown
+## Synopsis
+Короткое описание страницы: что здесь собрано, когда читать, какие вопросы закрывает.
+```
+
+Usage:
+
+- query routing reads index + synopsis before full page;
+- right inspector shows synopsis before body;
+- search results use synopsis as preview;
+- future progressive loading uses synopsis to reduce context cost.
+
+#### 1.3 Add link candidate map
 
 Add a method to `WikiFS`:
 
@@ -70,21 +210,22 @@ Each candidate should include:
   "slug": "project/category/page",
   "title": "Human title",
   "project": "project",
-  "type": "entity|concept|index|log",
+  "type": "entity|concept|comparison|synthesis|index|log",
   "tags": ["tag"],
-  "aliases": ["Human title", "page", "page alias"]
+  "aliases": ["Human title", "page", "page alias"],
+  "synopsis": "short summary if available"
 }
 ```
 
 Initial aliases:
+
 - page title;
 - slug last segment with hyphens replaced by spaces;
 - slug last segment as raw text;
-- tags that are specific enough.
+- tags that are specific enough;
+- optional frontmatter `aliases` later.
 
-Later aliases can move into frontmatter as an optional `aliases` field.
-
-#### 1.2 Inject link candidates into Step 2 prompt
+#### 1.4 Inject link candidates into Step 2 prompt
 
 Extend `STEP2_PROMPT` with:
 
@@ -98,13 +239,14 @@ Add binding rules:
 
 ```text
 - Link known entities/concepts on first meaningful mention.
+- Add a `## Связанные страницы` section when related pages exist.
 - Prefer project-local links.
 - Use `_general` links for shared concepts.
 - Do not link every repeated mention.
 - Do not invent slugs that are not in the candidate list.
 ```
 
-#### 1.3 Add conservative auto-linker
+#### 1.5 Add conservative auto-linker
 
 After LLM page generation, run deterministic post-processing:
 
@@ -116,7 +258,7 @@ After LLM page generation, run deterministic post-processing:
 
 This should be conservative and optional by config.
 
-#### 1.4 Add missing-link lint
+#### 1.6 Add missing-link lint
 
 Add new lint kind:
 
@@ -131,7 +273,7 @@ Detection logic:
 - flag as `info` or low-severity `warning`;
 - exclude current page, index/log pages, code blocks, and overly generic aliases.
 
-#### 1.5 Add graph metrics
+#### 1.7 Add graph metrics
 
 Expose or compute:
 
@@ -141,28 +283,331 @@ Expose or compute:
 - low-link pages;
 - average outgoing links per non-index page;
 - broken links ratio;
-- missing links count.
+- missing links count;
+- pages without related pages section.
 
 ### Acceptance criteria
 
 - New generated pages link relevant existing pages when known entities are mentioned.
+- Normal pages include `synopsis` and `## Связанные страницы` when candidates exist.
 - No invented slugs are created just to satisfy link density.
 - Linter can flag likely missing internal links.
-- Tests cover link candidate generation, auto-linking, and missing-link lint.
+- Tests cover link candidate generation, auto-linking, related pages, synopsis, and missing-link lint.
 
 ---
 
-## 2. Clickable links in chat and right sidebar
+## 2. Related page discovery during ingest
+
+### Problem
+
+`_find_related_pages()` currently uses simple word overlap and returns too few pages. This weakens updates, conflict detection, and cross-link generation.
+
+### Immediate decision
+
+Increase related-page retrieval to at least 10 pages.
+
+This is a quick improvement, not the final retrieval architecture. It gives Step 1 more context, which should improve detection of:
+
+- existing pages that need updates;
+- conflicts;
+- related pages;
+- duplicate or overlapping pages.
+
+### Recommended quick change
+
+- Change top related pages from 5 to 10.
+- Prefer project-local pages but include `_general` pages.
+- Keep a hard context budget so Step 1 does not become a document landfill with confidence issues.
+- Log related slugs in `analysis_notes` or ingest result for audit.
+
+### Better follow-up
+
+Replace overlap-only retrieval with weighted scoring:
+
+1. exact title/slug/alias matches;
+2. project-local boost;
+3. `_general` boost for shared concepts;
+4. tag overlap;
+5. heading/body lexical score;
+6. later: BM25/FTS.
+
+### Acceptance criteria
+
+- Step 1 receives at least 10 candidate pages when 10 candidates exist.
+- Related page list is visible in ingest diagnostics.
+- Context budget is still respected.
+- Tests cover candidate retrieval count and ordering behavior.
+
+---
+
+## 3. Source deduplication and source manifest
+
+### Problem
+
+Repeated uploads of the same document can trigger duplicate ingest and duplicate wiki updates.
+
+### Target outcome
+
+The engine should identify duplicate or unchanged sources before LLM ingest.
+
+### Implementation plan
+
+#### 3.1 SHA256 source manifest
+
+Create source state file:
+
+```text
+wiki-data/.state/source_manifest.json
+```
+
+This is engineering state, not knowledge content. It does not need to be markdown.
+
+Suggested structure:
+
+```json
+{
+  "raw/project/file.md": {
+    "sha256": "...",
+    "size": 12345,
+    "first_seen": "2026-05-07T12:00:00",
+    "last_seen": "2026-05-07T12:00:00",
+    "last_ingested": "2026-05-07T12:05:00",
+    "status": "active",
+    "ingest_runs": ["ingest-20260507-120500"]
+  }
+}
+```
+
+#### 3.2 Ingest behavior
+
+Before analysis:
+
+- compute SHA256;
+- if exact same file already ingested, skip or ask whether to force re-ingest;
+- if same path changed, mark as changed and create diff/review candidate;
+- if same hash under different path, flag duplicate source.
+
+#### 3.3 UI behavior
+
+Show:
+
+- new source;
+- changed source;
+- duplicate source;
+- unchanged source;
+- force re-ingest option.
+
+### Acceptance criteria
+
+- Exact duplicate sources do not trigger LLM ingest by default.
+- Changed sources are detected.
+- Duplicate source warning is visible in ingest result.
+- Tests cover same path unchanged, same path changed, different path same hash.
+
+---
+
+## 4. Provenance and epistemic metadata
+
+### Problem
+
+The current page-level `confidence` field is useful but insufficient. The system needs stronger source attribution and explicit knowledge state.
+
+### Target outcome
+
+Every generated page should make it clear what is extracted, inferred, ambiguous, contradicted, and which source supports each important claim.
+
+### Implementation plan
+
+#### 4.1 Claim-level provenance
+
+Add claim/paragraph source markers in page content.
+
+Minimum form:
+
+```markdown
+Факт утверждения. ^[raw/project/source.md]
+```
+
+Preferred form with source range when available:
+
+```markdown
+Факт утверждения. ^[raw/project/source.md#L42-L58]
+```
+
+Rules:
+
+- factual claims should have provenance marker;
+- synthesis/inference claims should cite contributing sources;
+- unsupported background prose should be marked as inferred or unverified;
+- linter validates that referenced raw source exists;
+- later linter validates line ranges if raw line mapping exists.
+
+#### 4.2 Page metadata fields
+
+Extend required or recommended frontmatter:
+
+```yaml
+confidence: 0.82
+provenance_state: extracted | merged | inferred | ambiguous | mixed
+contradicted_by:
+  - project/page-a
+  - project/page-b
+needs_review: false
+source_coverage: full | partial | weak
+synopsis: "Short routing summary."
+aliases: []
+```
+
+Field meaning:
+
+- `confidence`: confidence in the page as a synthesized knowledge artifact.
+- `provenance_state`: how the page was produced.
+- `contradicted_by`: pages or conflicts that contradict this page.
+- `needs_review`: true when human review is required.
+- `source_coverage`: whether the content is well supported by sources.
+- `synopsis`: short routing summary.
+- `aliases`: explicit names used by linker/search.
+
+#### 4.3 Confidence tags in content
+
+Allow paragraph-level tags:
+
+```markdown
+[EXTRACTED] Прямой факт из источника. ^[raw/project/source.md]
+[INFERRED] Вывод на основе нескольких источников. ^[raw/project/a.md] ^[raw/project/b.md]
+[AMBIGUOUS] Источник формулирует это неоднозначно. ^[raw/project/source.md]
+[UNVERIFIED] Фоновое знание без прямого источника.
+```
+
+Query behavior:
+
+- if answer relies on `INFERRED`, say it is inferred;
+- if answer relies on `AMBIGUOUS`, say it is ambiguous;
+- avoid using `UNVERIFIED` as factual support.
+
+#### 4.4 Lint rules
+
+Add checks:
+
+- missing provenance markers on factual pages;
+- invalid raw source references;
+- low confidence pages;
+- contradicted pages;
+- pages marked `needs_review`;
+- excess unverified paragraphs.
+
+### Acceptance criteria
+
+- New pages include provenance markers for important claims.
+- Frontmatter supports `provenance_state`, `contradicted_by`, `needs_review`, `source_coverage`, `synopsis`, and `aliases`.
+- Linter flags invalid provenance and low-confidence/contradicted pages.
+- Query answers can surface inferred/ambiguous status.
+
+---
+
+## 5. Duplicate detection, collapse audit, and synthesis queue
+
+### Problem
+
+As the wiki grows, multiple pages may describe the same concept, partially overlap, or become obsolete. Immediate auto-merge is risky; ignoring duplicates slowly rots the wiki.
+
+### Target outcome
+
+Add a separate audit function that detects possible duplicate/overlapping pages and proposes collapse/synthesis actions without silently merging content.
+
+### Implementation plan
+
+#### 5.1 Add audit command/function
+
+Add a separate audit mode, for example:
+
+```python
+audit_duplicates_and_collapse_candidates(project: str | None = None)
+```
+
+or API route:
+
+```text
+POST /api/audit/duplicates
+```
+
+It should produce a structured report, not directly rewrite pages.
+
+#### 5.2 Detection signals
+
+Start deterministic/cheap:
+
+- same or similar title;
+- same aliases;
+- same slug last segment;
+- high tag overlap;
+- high outgoing link overlap;
+- same source references;
+- highly similar synopsis;
+- pages that cite each other but repeat content.
+
+Later optional LLM audit:
+
+- are these duplicates?
+- should they be merged, cross-linked, or kept separate?
+- what is the proposed target synthesis page?
+
+#### 5.3 Collapse candidate types
+
+The audit should classify:
+
+- duplicate page: likely same concept;
+- overlapping page: related but not identical;
+- stale page: older version likely superseded;
+- synthesis candidate: multiple pages should feed a new overview/synthesis page;
+- split candidate: one page covers too many concepts.
+
+#### 5.4 Synthesis queue
+
+Do not merge automatically. Create queue items:
+
+```text
+wiki-data/synthesis_queue/
+  cluster-001.yaml
+```
+
+Suggested structure:
+
+```yaml
+id: cluster-001
+status: open
+kind: duplicate | overlap | synthesis | stale
+pages:
+  - project/a
+  - project/b
+reason: "Similar title, shared sources, high synopsis overlap"
+recommended_action: "create synthesis page and mark old page superseded after review"
+created: 2026-05-07
+```
+
+#### 5.5 UI behavior
+
+Dashboard should show:
+
+- duplicate candidates;
+- synthesis queue;
+- stale/supersede candidates;
+- review actions: create synthesis draft, mark not duplicate, merge after diff, supersede.
+
+### Acceptance criteria
+
+- Audit reports possible duplicates without modifying wiki pages.
+- Synthesis/collapse candidates are stored as reviewable queue items.
+- No automatic merge happens without approval.
+- Tests cover duplicate title, alias overlap, shared source, and not-duplicate cases.
+
+---
+
+## 6. Clickable links in chat and right sidebar
 
 ### Problem
 
 Wiki links are visually present but not reliably clickable. Backend page rendering converts `[[slug]]` into HTML anchors, and CSS styles `.wikilink`, but UI navigation is not unified.
-
-### Root causes
-
-1. Chat answers may contain raw `[[slug]]` text that is rendered as text.
-2. Page viewer receives rendered HTML, but React handlers are not attached inside `dangerouslySetInnerHTML` output.
-3. HTML wikilinks use `href="#wiki/slug"`, while the app needs explicit state updates to open the page in the right inspector.
 
 ### Target outcome
 
@@ -170,62 +615,11 @@ Clicking any wiki link in chat, cited chips, or page content opens the target pa
 
 ### Implementation plan
 
-#### 2.1 Centralize page opening
-
-Create one UI function:
-
-```js
-async function openWikiPage(slug, options = {}) {
-  ...
-}
-```
-
-It should:
-- fetch `/api/wiki/page/{slug}`;
-- set selected/open page state;
-- open the right sidebar if needed;
-- highlight the page in the tree;
-- update hash if requested;
-- show a toast if the page does not exist.
-
-#### 2.2 Render chat wikilinks explicitly
-
-Parse assistant messages for:
-
-- `[[slug]]`;
-- `[[slug|text]]`;
-- `[[slug#anchor]]`.
-
-Render them as clickable React elements.
-
-#### 2.3 Add delegated click handling for page content
-
-For rendered HTML page content:
-
-```js
-function handlePageContentClick(e) {
-  const link = e.target.closest('a.wikilink');
-  if (!link) return;
-  e.preventDefault();
-  const href = link.getAttribute('href') || '';
-  const slug = href.replace(/^#wiki\//, '');
-  openWikiPage(slug, { updateHash: true });
-}
-```
-
-#### 2.4 Add hash routing
-
-On initial load and `hashchange`:
-
-```js
-if (window.location.hash.startsWith('#wiki/')) {
-  openWikiPage(window.location.hash.replace('#wiki/', ''));
-}
-```
-
-#### 2.5 Render cited slugs as chips
-
-The SSE stream emits cited slug events. Store them per assistant message and show clickable chips below the answer.
+1. Centralize page opening via `openWikiPage(slug)`.
+2. Render chat wikilinks explicitly.
+3. Add delegated click handling for page content.
+4. Add hash route support for `#wiki/project/page`.
+5. Render cited slugs as clickable chips.
 
 ### Acceptance criteria
 
@@ -237,7 +631,7 @@ The SSE stream emits cited slug events. Store them per assistant message and sho
 
 ---
 
-## 3. UI / UX redesign
+## 7. UI / UX redesign
 
 ### Problem
 
@@ -273,111 +667,30 @@ Use three zones:
 
 1. Left sidebar: sessions, projects, filters.
 2. Center workspace: chat and answers.
-3. Right inspector: page, links, conflicts, sources.
-
-The right sidebar should act as a contextual inspector, not a miscellaneous storage closet with a scrollbar.
+3. Right inspector: page, links, conflicts, sources, provenance.
 
 ### Conflict resolution redesign
 
 Replace compact conflict cards with a guided detail view.
 
-#### Step 1: Understand the conflict
+Steps:
 
-Show side-by-side evidence cards:
-
-- Current wiki knowledge;
-- New source claim.
-
-Include:
-- conflict type;
-- source file;
-- affected wiki page;
-- current context;
-- source context;
-- dates/confidence if available.
-
-#### Step 2: Choose interpretation
-
-Clear choices:
-
-- Trust current wiki.
-- Trust new source.
-- Both are true in different contexts.
-- Needs manual follow-up.
-- Ignore / not a real conflict.
-
-Each choice should explain what it means.
-
-#### Step 3: Preview generated skill/rule
-
-Before saving, show a generated draft rule and allow editing.
-
-Example:
-
-```text
-For project X: Redis and PostgreSQL are not conflicting storage choices; Redis is used for cache, PostgreSQL for persistent data.
-```
-
-The user must be able to edit the rule before it is saved to `skills.md`.
-
-#### Step 4: Preview changes
-
-Show what will happen:
-
-- conflict status becomes `RESOLVED`;
-- rule is appended to `skills.md` if enabled;
-- affected pages are listed;
-- automatic page updates, if not implemented, are explicitly not performed.
-
-#### Step 5: Confirm
-
-Use explicit buttons:
-
-- Resolve conflict and save rule;
-- Resolve without rule;
-- Add note only;
-- Mark as needs follow-up.
+1. Understand the conflict: current wiki knowledge vs new source claim.
+2. Choose interpretation: trust current, trust source, both true in context, needs follow-up, ignore.
+3. Preview generated skill/rule.
+4. Preview page/diff/provenance changes.
+5. Confirm explicit action.
 
 ### UI components
 
-- `ConflictList`: filters, counters, status chips.
-- `ConflictDetail`: side-by-side evidence, choice selection, action summary.
-- `SkillPreviewEditor`: generated rule preview, editable text, section selector.
-- `PageInspector`: metadata, outgoing links, backlinks, sources, related conflicts.
-- `CitationChips`: cited pages under assistant answers.
-
-### Implementation phases
-
-#### Phase 1: Improve current single-file UI
-
-- light theme variables;
-- better typography and spacing;
-- clickable wiki links;
-- citation chips;
-- conflict detail modal with skill preview.
-
-#### Phase 2: Split UI into modules
-
-Target structure:
-
-```text
-app/ui/
-  index.html
-  src/
-    App.jsx
-    api.js
-    components/
-      Chat.jsx
-      WikiSidebar.jsx
-      PageInspector.jsx
-      ConflictList.jsx
-      ConflictDetail.jsx
-      SkillPreviewEditor.jsx
-```
-
-#### Phase 3: Optional frontend build tooling
-
-Only add build tooling if the single-file UI becomes too painful to maintain. Do not add complexity just to make the repo look more grown-up. Repositories do not need ceremonies, despite what frontend culture suggests.
+- `ConflictList`;
+- `ConflictDetail`;
+- `SkillPreviewEditor`;
+- `PageInspector`;
+- `CitationChips`;
+- `DiffViewer`;
+- `ProvenancePanel`;
+- `SynthesisQueue`.
 
 ### Acceptance criteria
 
@@ -385,11 +698,12 @@ Only add build tooling if the single-file UI becomes too painful to maintain. Do
 - Chat citations and wikilinks are clickable.
 - Conflict resolution is understandable without reading backend code.
 - User can preview and edit generated rules before saving them.
-- Right inspector clearly shows page, links, sources, and conflicts.
+- User can review diffs before applying page updates.
+- Right inspector clearly shows page, links, sources, provenance, and conflicts.
 
 ---
 
-## 4. Baseline automated tests
+## 8. Baseline automated tests
 
 ### Problem
 
@@ -401,42 +715,44 @@ A deterministic test suite covering core filesystem, linting, mocked agent flows
 
 ### Test plan
 
-#### 4.1 WikiFS tests
+#### 8.1 WikiFS tests
 
 - create/read page with valid frontmatter;
 - reject missing frontmatter;
 - enforce char limits;
 - save/read/list raw files;
 - append and resolve conflict;
-- slug validation when added.
+- slug validation when added;
+- draft write/read/apply flow;
+- source manifest read/write.
 
-#### 4.2 WikiLinter tests
+#### 8.2 WikiLinter tests
 
 - broken wikilink;
 - missing anchor;
 - duplicate title;
 - stale page;
 - superseded active page;
-- missing wikilink after it is added.
+- missing wikilink;
+- missing related pages;
+- invalid provenance marker;
+- low confidence / contradicted page.
 
-#### 4.3 Agent tests with mocked LLMClient
+#### 8.3 Agent tests with mocked LLMClient
 
 - IngestAgent happy path;
+- update produces draft/diff, not direct overwrite;
 - malformed JSON retry/failure;
 - QueryAgent factual query;
 - citations in answer.
 
-#### 4.4 API smoke tests
+#### 8.4 API smoke tests
 
 - `/api/health`;
 - wiki tree endpoint with temp `wiki-data`;
-- invalid ingest upload rejection.
-
-### Requirements
-
-- Use `tmp_path` for isolated wiki-data.
-- No real LLM or network calls.
-- Keep tests deterministic.
+- invalid ingest upload rejection;
+- duplicate source detection;
+- draft listing/apply flow when implemented.
 
 ### Acceptance criteria
 
@@ -446,7 +762,7 @@ A deterministic test suite covering core filesystem, linting, mocked agent flows
 
 ---
 
-## 5. Small code quality fixes
+## 9. Small code quality fixes
 
 ### Already fixed
 
@@ -455,7 +771,13 @@ A deterministic test suite covering core filesystem, linting, mocked agent flows
 
 ### Remaining small fixes
 
-#### 5.1 Do not silently swallow page parse errors
+#### 9.1 Increase related pages count
+
+Change `_find_related_pages()` from top 5 to at least top 10.
+
+This is safe and useful as an immediate improvement, but it must be treated as temporary until retrieval is improved.
+
+#### 9.2 Do not silently swallow page parse errors
 
 `WikiFS._parse_page()` currently catches all exceptions and returns `None`. Missing file can return `None`, but parse errors should be visible in logs.
 
@@ -465,7 +787,7 @@ Plan:
 - keep non-strict behavior for now to avoid breaking UI;
 - optionally add strict mode later.
 
-#### 5.2 Reduce O(N²) index update behavior
+#### 9.3 Reduce O(N²) index update behavior
 
 `WikiFS._update_index_entry()` calls `list_pages()` on every page write. During rebuild this can become expensive.
 
@@ -475,7 +797,7 @@ Plan:
 - rebuild index once after batch operation;
 - keep current behavior for normal single-page writes.
 
-#### 5.3 Prepare slug validation
+#### 9.4 Prepare slug validation
 
 Add helper:
 
@@ -495,6 +817,7 @@ Rules:
 
 ### Acceptance criteria
 
+- related page retrieval returns at least 10 candidates when available;
 - parse errors are visible in logs;
 - rebuild can defer index updates;
 - slug helper has tests.
@@ -508,34 +831,53 @@ Rules:
 1. Add baseline tests.
 2. Add slug validation helper and tests.
 3. Improve parse error logging.
-4. Add clickable wiki links in UI.
-5. Add cited chips.
+4. Increase `_find_related_pages()` to at least 10 pages.
+5. Add clickable wiki links in UI.
+6. Add cited chips.
 
-### Sprint 2: Cross-linking
+### Sprint 2: Page structure and graph quality
 
-1. Add link candidate map.
-2. Inject candidates into Step 2 prompt.
-3. Add conservative auto-linker.
-4. Add missing-link lint.
-5. Add graph metrics.
+1. Add `synopsis` field/section.
+2. Add `## Связанные страницы` section.
+3. Add link candidate map.
+4. Inject candidates into Step 2 prompt.
+5. Add conservative auto-linker.
+6. Add missing-link lint.
+7. Add graph metrics.
 
-### Sprint 3: Conflict UX
+### Sprint 3: Safe ingest updates
+
+1. Stop silent overwrite for existing page updates.
+2. Add draft/candidate directory.
+3. Add unified diff generation.
+4. Add update approval/apply flow.
+5. Show changed/added/removed claims.
+
+### Sprint 4: Source identity and provenance
+
+1. Add SHA256 source manifest.
+2. Add duplicate/unchanged source detection.
+3. Add claim-level provenance markers.
+4. Add provenance validation lint.
+5. Add page metadata: `provenance_state`, `contradicted_by`, `needs_review`, `source_coverage`, `aliases`.
+
+### Sprint 5: Conflict UX and duplicate audit
 
 1. Add conflict detail modal/panel.
-2. Add side-by-side evidence cards.
-3. Add resolution choice explanations.
-4. Add editable skill preview.
-5. Add explicit action summary before save.
+2. Add editable skill preview.
+3. Add duplicate/collapse audit.
+4. Add synthesis queue.
+5. Add UI for synthesis/collapse candidates.
 
-### Sprint 4: Visual redesign
+### Sprint 6: Visual redesign
 
 1. Switch default to light theme.
 2. Improve typography and spacing.
 3. Rework right sidebar into contextual inspector.
-4. Add page links/backlinks/sources view.
+4. Add page links/backlinks/sources/provenance view.
 5. Consider splitting UI into components.
 
-### Sprint 5: Deferred technical debt
+### Sprint 7: Deferred technical debt
 
 1. Real sandboxing or disable code execution in query flow.
 2. Auth and authorization.
@@ -552,23 +894,42 @@ Rules:
 - Orphan page percentage.
 - Missing-link lint count.
 - Broken-link ratio.
+- Pages without `## Связанные страницы`.
+- Pages without synopsis.
+
+### Provenance and trust
+
+- Percentage of factual paragraphs with provenance markers.
+- Invalid provenance marker count.
+- Low-confidence page count.
+- Contradicted page count.
+- Pages marked `needs_review`.
+
+### Source management
+
+- Duplicate source count.
+- Skipped unchanged ingest count.
+- Changed source count.
+- Force re-ingest count.
 
 ### Query quality
 
 - Percentage of answers with citations.
 - Percentage of citations that are clickable and resolve to real pages.
 - Number of user fallbacks to raw source files.
+- Number of answers that explicitly mark inferred/ambiguous content.
 
-### Conflict workflow
+### Conflict and review workflow
 
 - Open conflicts count.
 - Average time to resolve conflict.
 - Percentage of resolved conflicts with approved skill/rule.
-- Number of later conflicts prevented by existing skills.
+- Number of page updates approved vs rejected.
+- Number of duplicate/synthesis candidates resolved.
 
 ### UX
 
-- Upload -> ingest -> ask -> inspect cited page completion rate.
+- Upload -> ingest -> review diff -> apply -> ask -> inspect cited page completion rate.
 - Number of clicks needed to resolve a conflict.
 - User-visible errors during normal workflow.
 
@@ -580,4 +941,6 @@ Rules:
 - Do not add enterprise multi-user permissions yet.
 - Do not add PDF/DOCX ingestion as first-class until markdown flow is reliable.
 - Do not auto-resolve conflicts without human approval.
+- Do not silently merge duplicate pages.
+- Do not silently overwrite existing wiki pages during ingest.
 - Do not add frontend build tooling until the single-file UI becomes the bottleneck.
