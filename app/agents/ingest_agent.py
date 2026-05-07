@@ -415,8 +415,8 @@ for md in wiki_dir.rglob("*.md"):
     except Exception:
         pass
 
-# Sort by overlap, return top 5
-result = [slug for slug, score in sorted(candidates, key=lambda x: -x[1])[:5]
+# Sort by overlap, return top 10
+result = [slug for slug, score in sorted(candidates, key=lambda x: -x[1])[:10]
           if score > 0]
 print(json.dumps(result))
 """

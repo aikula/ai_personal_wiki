@@ -1,6 +1,6 @@
 import pytest
 
-from app.core.utils import extract_wikilinks, now_iso, parse_json_block
+from app.core.utils import extract_wikilinks, now_iso, parse_json_block, validate_slug
 
 
 class TestParseJsonBlock:
@@ -57,3 +57,48 @@ class TestNowIso:
         result = now_iso()
         assert isinstance(result, str)
         assert "T" in result
+
+
+class TestValidateSlug:
+    def test_valid_simple(self):
+        validate_slug("myapp/redis")
+
+    def test_valid_with_hyphens(self):
+        validate_slug("myapp/redis-cache")
+
+    def test_valid_with_underscores(self):
+        validate_slug("myapp/my_page")
+
+    def test_valid_deep(self):
+        validate_slug("project/category/sub/page")
+
+    def test_valid_numbers(self):
+        validate_slug("myapp/v2")
+
+    def test_empty_raises(self):
+        with pytest.raises(ValueError, match="empty"):
+            validate_slug("")
+
+    def test_leading_slash_raises(self):
+        with pytest.raises(ValueError, match="start with /"):
+            validate_slug("/myapp/page")
+
+    def test_trailing_slash_raises(self):
+        with pytest.raises(ValueError, match="end with /"):
+            validate_slug("myapp/page/")
+
+    def test_dotdot_raises(self):
+        with pytest.raises(ValueError, match="\\.\\."):
+            validate_slug("myapp/../etc")
+
+    def test_backslash_raises(self):
+        with pytest.raises(ValueError, match="backslash"):
+            validate_slug("myapp\\page")
+
+    def test_uppercase_raises(self):
+        with pytest.raises(ValueError, match="invalid characters"):
+            validate_slug("MyApp/Page")
+
+    def test_spaces_raises(self):
+        with pytest.raises(ValueError, match="invalid characters"):
+            validate_slug("my app/page")

@@ -649,7 +649,8 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
                 raw=raw,
                 char_count=len(raw),
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning("Parse error: slug=%s path=%s error=%s", slug, path, exc)
             return None
 
     def _char_limit_for_type(self, page_type: str) -> int:

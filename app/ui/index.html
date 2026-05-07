@@ -795,6 +795,18 @@ function WikiPanel({ highlightedSlug, onPageOpen }) {
     if (highlightedSlug) openPage(highlightedSlug);
   }, [highlightedSlug]);
 
+  // Hash routing: #wiki/project/page → openPage
+  useEffect(() => {
+    const onHash = () => {
+      const hash = window.location.hash.replace(/^#wiki\//, '');
+      if (hash && hash !== window.location.hash) openPage(hash);
+    };
+    window.addEventListener('hashchange', onHash);
+    // Handle existing hash on mount
+    onHash();
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
   const openPage = async (slug) => {
     setActivePage(slug);
     setPageNotFound(null);

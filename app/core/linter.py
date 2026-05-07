@@ -141,10 +141,9 @@ class WikiLinter:
             issues += self._check_superseded_active(page)
             issues += self._check_stale(page)
 
-        # Global checks (need full picture)
-        if slugs is None:
-            issues += self._check_orphans(target_pages)
-            issues += self._check_duplicate_titles(target_pages)
+        # Global checks (always run for full picture)
+        issues += self._check_orphans(target_pages)
+        issues += self._check_duplicate_titles(target_pages)
 
         return LintReport(
             ran_at=datetime.now().isoformat(timespec="seconds"),
