@@ -72,6 +72,8 @@ async def get_wiki_page(
         superseded_by=page.meta.get("superseded_by"),
         supersedes=page.meta.get("supersedes"),
         synopsis=page.meta.get("synopsis", ""),
+        needs_review=page.meta.get("needs_review", False),
+        source_coverage=page.meta.get("source_coverage", ""),
     )
 
 

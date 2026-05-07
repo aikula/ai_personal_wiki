@@ -123,6 +123,8 @@ class WikiPageResponse(BaseModel):
     superseded_by: str | None
     supersedes: str | None
     synopsis: str = ""
+    needs_review: bool = False
+    source_coverage: str = ""
 
 
 class WikiSearchRequest(BaseModel):
