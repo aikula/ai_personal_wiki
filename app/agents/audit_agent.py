@@ -24,9 +24,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
+import yaml
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
+from pathlib import Path
 
 from app.config import Settings
 from app.core.linter import LintReport, WikiLinter
@@ -256,135 +259,145 @@ class AuditAgent:
                 self._auto_create_conflicts, semantic
             )
 
-        logger.info("Audit complete: duration=%.1fs structural_issues=%d semantic_issues=%d",
-                     duration, len(structural.issues), len(semantic))
+            logger.info("Audit complete: duration=%.1fs structural_issues=%d semantic_issues=%d",
+                         duration, len(structural.issues), len(semantic))
+
+            return AuditReport(
+                ran_at=start.isoformat(timespec="seconds"),
+                duration_seconds=duration,
+                structural=structural,
+                semantic=semantic,
+            )
+
+        logger.info("Audit complete: duration=%.1fs structural_issues=%d",
+                     duration, len(structural.issues))
 
         return AuditReport(
-            ran_at=datetime.now().isoformat(timespec="seconds"),
-            total_pages=len(all_pages),
-            structural=structural,
-            semantic=semantic,
-            llm_audit_ran=llm_audit,
+            ran_at=start.isoformat(timespec="seconds"),
             duration_seconds=duration,
+            structural=structural,
+            semantic=[],
         )
 
-    def run_sync(
-        self,
-        llm_audit: bool = False,
-        project: str | None = None,
-    ) -> AuditReport:
-        """Synchronous wrapper. Use in CLI or non-async contexts."""
-        return asyncio.run(self.run(llm_audit=llm_audit, project=project))
+    # ── Duplicate / collapse audit ──────────────────────────────
 
-    # ── Structural audit node ────────────────────────────────────
+    def audit_duplicates(self, project: str | None = None) -> list[dict]:
+        """Deterministic duplicate/collapse candidate detection.
 
-    def _run_structural_lint(self, pages: list[WikiPage]) -> LintReport:
-        """Runs WikiLinter on provided pages. Pure reads, no LLM."""
-        linter = WikiLinter(self.fs, self.settings)
-        # Pass slugs to run incremental mode on specific pages
-        return linter.lint(slugs=[p.slug for p in pages])
+        Returns list of candidates::
 
-    # ── Semantic audit nodes ─────────────────────────────────────
-
-    def _run_semantic_audit(
-        self,
-        pages: list[WikiPage],
-    ) -> list[SemanticIssue]:
+            {"id": str, "kind": str, "pages": [slug], "reason": str,
+             "recommended_action": str, "score": float}
         """
-        LLM semantic audit for a cluster of related pages.
-        Called in thread pool (not async itself).
-        """
-        if not pages:
+        pages = self.fs.list_pages(project=project)
+        candidates: list[dict] = []
+        seen: set[str] = set()
+
+        # 1. Same or similar title within same project
+        by_project_title: dict[tuple[str, str], list[str]] = {}
+        for p in pages:
+            if p.page_type in ("index", "log"):
+                continue
+            key = (p.project, p.title.lower().strip())
+            by_project_title.setdefault(key, []).append(p.slug)
+        for (proj, title), slugs in by_project_title.items():
+            if len(slugs) > 1:
+                candidates.append({
+                    "id": f"dup-title-{len(candidates) + 1:03d}",
+                    "kind": "duplicate",
+                    "pages": slugs,
+                    "reason": f"Same title '{title}' in project '{proj}'",
+                    "recommended_action": "merge or differentiate titles",
+                    "score": 0.9,
+                })
+                seen.update(slugs)
+
+        # 2. Same source references → likely overlap
+        source_map: dict[str, list[str]] = {}
+        for p in pages:
+            if p.page_type in ("index", "log"):
+                continue
+            if p.slug in seen:
+                continue
+            for ref in p.wikilinks:
+                source_map.setdefault(ref, []).append(p.slug)
+        for ref, slugs in source_map.items():
+            if len(slugs) > 1:
+                overlap_key = tuple(sorted(slugs))
+                if overlap_key not in seen:
+                    candidates.append({
+                        "id": f"overlap-ref-{len(candidates) + 1:03d}",
+                        "kind": "overlap",
+                        "pages": list(overlap_key),
+                        "reason": f"Both link to [[{ref}]]",
+                        "recommended_action": "cross-link or merge",
+                        "score": 0.6,
+                    })
+
+        # 3. High tag overlap within same project
+        from collections import Counter
+        for p in pages:
+            if p.page_type in ("index", "log"):
+                continue
+            if p.slug in seen:
+                continue
+            for q in pages:
+                if q.slug <= p.slug or q.slug in seen:
+                    continue
+                if q.project != p.project:
+                    continue
+                common = set(p.tags) & set(q.tags)
+                if len(common) >= 2 and len(p.tags) >= 2 and len(q.tags) >= 2:
+                    candidates.append({
+                        "id": f"overlap-tag-{len(candidates) + 1:03d}",
+                        "kind": "overlap",
+                        "pages": [p.slug, q.slug],
+                        "reason": f"Shared tags: {common}",
+                        "recommended_action": "review for merge or cross-link",
+                        "score": 0.5,
+                    })
+
+        return candidates
+
+    # ── Synthesis queue ──────────────────────────────────────────
+
+    @property
+    def synthesis_dir(self) -> Path:
+        return self.fs.root / "synthesis_queue"
+
+    def list_synthesis_candidates(self) -> list[dict]:
+        """List all pending synthesis/collapse queue items."""
+        if not self.synthesis_dir.exists():
             return []
+        candidates = []
+        for f in sorted(self.synthesis_dir.glob("*.yaml")):
+            try:
+                data = yaml.safe_load(f.read_text(encoding="utf-8"))
+                if data:
+                    candidates.append(data)
+            except Exception:
+                pass
+        return candidates
 
-        project = pages[0].project
-        # Fit pages into LLM context budget
-        contents = [p.raw for p in pages]
-        fitted_contents = self.budget.fit_wiki_pages(contents)
-        pages_text = "\n\n---\n\n".join(fitted_contents)
+    def create_synthesis_candidate(self, candidate: dict) -> str:
+        """Store a collapse/synthesis candidate in the queue."""
+        self.synthesis_dir.mkdir(parents=True, exist_ok=True)
+        cid = candidate.get("id", f"cluster-{len(os.listdir(str(self.synthesis_dir))) + 1:03d}")
+        candidate["created"] = date.today().isoformat()
+        path = self.synthesis_dir / f"{cid}.yaml"
+        path.write_text(yaml.dump(candidate, default_flow_style=False, allow_unicode=True),
+                        encoding="utf-8")
+        return cid
 
-        raw = self.llm.call(
-            system=SEMANTIC_AUDIT_SYSTEM,
-            prompt=SEMANTIC_AUDIT_PROMPT.format(
-                project=project,
-                count=len(pages),
-                pages_content=pages_text,
-            ),
-            temperature=0.1,
-        )
-
-        try:
-            items = _parse_json_list(raw)
-        except ValueError:
-            return []
-
-        issues = []
-        for item in items:
-            kind = item.get("kind", "")
-            if kind not in {"factual_contradiction", "duplicate_content",
-                            "missing_backlink", "stale_fact"}:
-                continue
-            issues.append(SemanticIssue(
-                kind=kind,
-                slugs=list(item.get("slugs", [])),
-                detail=str(item.get("detail", "")),
-                severity=str(item.get("severity", "warning")),
-                fix_hint=str(item.get("fix_hint", "")),
-                auto_conflict=bool(item.get("auto_conflict", False)),
-            ))
-        return issues
-
-    # ── Auto-conflict creation ───────────────────────────────────
-
-    def _auto_create_conflicts(self, issues: list[SemanticIssue]) -> None:
-        """
-        For semantic issues with auto_conflict=True,
-        create ConflictEntry in conflicts.md automatically.
-        Avoids duplicates by checking existing conflicts.
-        """
-        import re as _re
-
-        from app.core.wiki_fs import ConflictEntry
-
-        existing_raw = self.fs.read_conflicts_raw()
-        ids = _re.findall(r"CONFLICT-(\d+)", existing_raw)
-        next_num = max((int(i) for i in ids), default=0) + 1
-
-        for issue in issues:
-            if not issue.auto_conflict:
-                continue
-            if len(issue.slugs) < 2:
-                continue
-
-            # Check if this conflict already exists (same slugs)
-            slug_sig = "|".join(sorted(issue.slugs))
-            if slug_sig in existing_raw:
-                continue
-
-            cid = f"CONFLICT-{next_num:03d}"
-            next_num += 1
-
-            page_a = self.fs.read_page(issue.slugs[0])
-            page_b = self.fs.read_page(issue.slugs[1]) if len(issue.slugs) > 1 else None
-
-            entry = ConflictEntry(
-                id=cid,
-                status="OPEN",
-                date=datetime.now().date().isoformat(),
-                project=page_a.project if page_a else "_general",
-                source_file="semantic_audit",
-                conflict_type="factual_contradiction",
-                page_a_slug=issue.slugs[0],
-                page_b_ref=issue.slugs[1] if len(issue.slugs) > 1 else "unknown",
-                context_a=page_a.content[:300] if page_a else "",
-                context_b=page_b.content[:300] if page_b else "",
-                suggested_options=[
-                    f"Trust {issue.slugs[0]}",
-                    f"Trust {issue.slugs[1]}" if len(issue.slugs) > 1 else "Manual review",
-                    "Both are true in different contexts",
-                ],
-            )
-            self.fs.append_conflict(entry)
+    def resolve_synthesis_candidate(self, cid: str, action: str) -> bool:
+        """Remove or archive a synthesis queue item."""
+        path = self.synthesis_dir / f"{cid}.yaml"
+        if not path.exists():
+            return False
+        archive = path.parent / ".archive"
+        archive.mkdir(exist_ok=True)
+        path.rename(archive / f"{cid}_{action}.yaml")
+        return True
 
     # ── Cluster builder ──────────────────────────────────────────
 

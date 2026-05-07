@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import chat, conflicts, ingest, wiki
+from app.api.routes import audit as audit_route
 from app.api.routes import settings as settings_route
 from app.config import setup_logging
 
@@ -45,6 +46,7 @@ app.include_router(ingest.router)
 app.include_router(chat.router)
 app.include_router(wiki.router)
 app.include_router(conflicts.router)
+app.include_router(audit_route.router)
 app.include_router(settings_route.router)
 
 # ── Health check ─────────────────────────────────────────────────
