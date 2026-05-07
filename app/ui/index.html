@@ -780,6 +780,77 @@ function ConflictsPanel() {
 }
 
 // ─────────────────────────────────────────────
+// Drafts Panel
+// ─────────────────────────────────────────────
+function DraftsPanel() {
+  const [drafts, setDrafts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const toast = React.useContext(ToastCtx);
+
+  const loadDrafts = async () => {
+    setLoading(true);
+    try {
+      const data = await api.get('/ingest/drafts');
+      setDrafts(data.drafts);
+    } catch { setDrafts([]); }
+    setLoading(false);
+  };
+
+  useEffect(() => { loadDrafts(); }, []);
+
+  const handleApply = async (id) => {
+    try {
+      const r = await api.post(`/ingest/drafts/${id}/apply`);
+      if (r.status === 'applied') {
+        toast.success(`Applied: ${r.pages.join(', ')}`);
+        loadDrafts();
+      }
+    } catch(e) { toast.error('Apply failed'); }
+  };
+
+  const handleReject = async (id) => {
+    try {
+      await api.post(`/ingest/drafts/${id}/reject`);
+      toast.success('Draft rejected');
+      loadDrafts();
+    } catch { toast.error('Reject failed'); }
+  };
+
+  if (loading) return <div className="panel-hint">Loading drafts...</div>;
+
+  return (
+    <div className="conflicts-panel">
+      {drafts.length === 0 && <div className="panel-hint">No pending drafts.</div>}
+      {drafts.map(d => (
+        <div key={d.id} className="conflict-card" style={{marginBottom:8}}>
+          <div style={{fontWeight:600, marginBottom:4}}>{d.id}</div>
+          <div style={{fontSize:12, color:'var(--text-dim)', marginBottom:6}}>
+            {d.plan_summary} &middot; {d.pages?.length || 0} pages
+            &middot; {d.diff_count || 0} diffs
+          </div>
+          {d.pages?.length > 0 && (
+            <div style={{fontSize:11, marginBottom:6}}>
+              {d.pages.map(p => (
+                <span key={p} className="page-tag">{p}</span>
+              ))}
+            </div>
+          )}
+          <div style={{display:'flex', gap:6}}>
+            <button className="header-btn" onClick={() => handleApply(d.id)}
+                    style={{color:'var(--green)', borderColor:'var(--green)'}}>
+              Apply
+            </button>
+            <button className="header-btn danger" onClick={() => handleReject(d.id)}>
+              Reject
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // Wiki Tree + Page Viewer (Right Panel)
 // ─────────────────────────────────────────────
 function WikiPanel({ highlightedSlug, onPageOpen }) {
@@ -906,9 +977,14 @@ function WikiPanel({ highlightedSlug, onPageOpen }) {
           Conflicts
           {tree.open_conflicts > 0 && <span className="badge">{tree.open_conflicts}</span>}
         </div>
+        <div className={`tab ${tab==='drafts'?'active':''}`} onClick={()=>setTab('drafts')}>
+          Drafts
+          <span id="draft-badge" className="badge" style={{display:'none'}}>0</span>
+        </div>
       </div>
 
       {tab === 'conflicts' && <ConflictsPanel />}
+      {tab === 'drafts' && <DraftsPanel />}
 
       {tab === 'wiki' && (
         <>

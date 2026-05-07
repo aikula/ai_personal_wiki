@@ -106,3 +106,23 @@ async def test_page_with_synopsis(client, test_settings):
     assert resp.status_code == 200
     data = resp.json()
     assert data["synopsis"] == "A short summary"
+
+
+@pytest.mark.asyncio
+async def test_drafts_list_empty(client):
+    resp = await client.get("/api/ingest/drafts")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "drafts" in data
+
+
+@pytest.mark.asyncio
+async def test_draft_reject_nonexistent(client):
+    resp = await client.post("/api/ingest/drafts/nonexistent/reject")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_draft_apply_nonexistent(client):
+    resp = await client.post("/api/ingest/drafts/nonexistent/apply")
+    assert resp.status_code in (400, 404)

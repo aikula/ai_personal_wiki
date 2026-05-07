@@ -21,8 +21,9 @@ from __future__ import annotations
 import json
 import logging
 import re
+import yaml
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 
 from app.config import Settings
 from app.core.interpreter import CodeInterpreter
@@ -456,6 +457,7 @@ print(json.dumps(result))
         pages_created: list[str] = []
         pages_updated: list[str] = []
         pages_superseded: list[str] = []
+        pending_updates: list[dict] = []
 
         skills = self.fs.read_skills()
         agents_md = self._read_agents_md()
@@ -538,44 +540,67 @@ print(json.dumps(result))
             all_candidates = self.fs.build_link_candidates()
             content = auto_link(content, all_candidates, current_slug=planned.slug)
 
-            try:
-                self.fs.write_page(
-                    slug=planned.slug,
-                    meta=meta,
-                    content=content,
-                    allow_overwrite=(action in ("update", "supersede")),
-                )
-            except Exception as exc:
-                logger.warning("Step2 write failed: slug=%s action=%s error=%s",
-                               planned.slug, action, exc)
-                self.fs.append_log(IngestLog(
-                    timestamp=now_iso(),
-                    source_file=analysis.source_file,
-                    project=analysis.project,
-                    pages_created=[],
-                    pages_updated=[],
-                    conflicts_detected=[],
-                    skills_triggered=[],
-                    char_delta=0,
-                ))
+            if action == "create":
+                # Creates safe to write directly
+                try:
+                    self.fs.write_page(
+                        slug=planned.slug, meta=meta, content=content,
+                    )
+                    pages_created.append(planned.slug)
+                    logger.info("Step2 created: slug=%s", planned.slug)
+                except Exception as exc:
+                    logger.warning("Step2 create failed: slug=%s error=%s",
+                                   planned.slug, exc)
+                    self._log_failed_ingest(analysis)
                 continue
 
-            # Handle supersession
-            if action == "supersede" and planned.supersedes:
-                try:
-                    self.fs.supersede_page(planned.supersedes, planned.slug)
-                    pages_superseded.append(planned.supersedes)
-                except Exception:
-                    pass
+            # Update / supersede → collect for draft
+            frontmatter_and_content = _render_page_raw(meta, content)
+            pending_updates.append({
+                "slug": planned.slug,
+                "content": frontmatter_and_content,
+                "action": action,
+            })
 
-            if action == "create":
-                pages_created.append(planned.slug)
-                logger.info("Step2 created: slug=%s", planned.slug)
-            elif action in ("update", "supersede"):
-                pages_updated.append(planned.slug)
-                logger.info("Step2 updated: slug=%s action=%s", planned.slug, action)
+        # Create draft for pending updates/supersedes
+        if pending_updates:
+            draft_id = f"ingest-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+            plan = {
+                "summary": f"{len(pending_updates)} page(s) to update from {analysis.source_file}",
+                "source_file": analysis.source_file,
+                "project": analysis.project,
+                "actions": [
+                    {"slug": u["slug"], "action": u["action"]}
+                    for u in pending_updates
+                ],
+            }
+            pages_to_write = {
+                u["slug"]: u["content"] for u in pending_updates
+            }
+            self.fs.create_draft(
+                draft_id=draft_id,
+                plan=plan,
+                pages=pages_to_write,
+                conflicts=[],  # conflicts already recorded separately
+            )
+            for u in pending_updates:
+                if u["action"] in ("update", "supersede"):
+                    pages_updated.append(u["slug"])
+                    logger.info("Draft queued: slug=%s action=%s draft=%s",
+                                u["slug"], u["action"], draft_id)
 
         return pages_created, pages_updated, pages_superseded
+
+    def _log_failed_ingest(self, analysis: AnalysisResult) -> None:
+        """Append a minimal log entry for a failed ingest step."""
+        self.fs.append_log(IngestLog(
+            timestamp=now_iso(),
+            source_file=analysis.source_file,
+            project=analysis.project,
+            pages_created=[], pages_updated=[],
+            conflicts_detected=[], skills_triggered=[],
+            char_delta=0,
+        ))
 
     # ── Conflict recording ───────────────────────────────────────
 
@@ -830,6 +855,16 @@ def _planned_page_to_dict(page: PlannedPage) -> dict:
         "confidence": page.confidence,
         "sources_count": page.sources_count,
     }
+
+
+def _render_page_raw(meta: dict, content: str) -> str:
+    """Render meta dict + markdown content into a full raw page (frontmatter + body)."""
+    meta_str = yaml.dump(
+        {k: v for k, v in meta.items() if v is not None},
+        default_flow_style=False,
+        allow_unicode=True,
+    ).strip()
+    return f"---\n{meta_str}\n---\n{content}\n"
 
 
 # Schema hint injected into Step 1 prompt

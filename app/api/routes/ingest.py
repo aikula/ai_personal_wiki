@@ -186,3 +186,49 @@ async def rebuild_wiki(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ── Draft management ─────────────────────────────────────────
+
+@router.get("/drafts")
+async def list_drafts(
+    fs: Annotated[WikiFS, Depends(get_wiki_fs)],
+):
+    """List all pending draft artifacts."""
+    return {"drafts": fs.list_drafts()}
+
+
+@router.get("/drafts/{draft_id}")
+async def get_draft(
+    draft_id: str,
+    fs: Annotated[WikiFS, Depends(get_wiki_fs)],
+):
+    """Get full draft details including diffs and candidate pages."""
+    draft = fs.read_draft(draft_id)
+    if draft is None:
+        raise HTTPException(404, f"Draft not found: {draft_id}")
+    return draft
+
+
+@router.post("/drafts/{draft_id}/apply")
+async def apply_draft(
+    draft_id: str,
+    fs: Annotated[WikiFS, Depends(get_wiki_fs)],
+):
+    """Apply a draft: write all candidate pages to the wiki."""
+    try:
+        applied = fs.apply_draft(draft_id)
+        return {"status": "applied", "pages": applied}
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
+
+
+@router.post("/drafts/{draft_id}/reject")
+async def reject_draft(
+    draft_id: str,
+    fs: Annotated[WikiFS, Depends(get_wiki_fs)],
+):
+    """Reject a draft: remove it without applying."""
+    if fs.reject_draft(draft_id):
+        return {"status": "rejected"}
+    raise HTTPException(404, f"Draft not found: {draft_id}")
