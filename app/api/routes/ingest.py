@@ -51,9 +51,24 @@ async def ingest_file(
     content = await file.read()
     content_str = content.decode("utf-8")
 
+    raw_path = f"{project}/{file.filename}"
+    state = fs.check_source_state(raw_path, content_str)
+
+    if state["status"] == "unchanged":
+        logger.info("Source unchanged, skipping: %s", raw_path)
+        return IngestFileResponse(
+            success=True, source_file=raw_path, project=project,
+            pages_created=[], pages_updated=[], pages_superseded=[],
+            conflict_ids=[], skills_triggered=[], lint_errors=0,
+            lint_warnings=0, analysis_notes="Source unchanged, skipped",
+            error=None,
+        )
+
+    if state["status"] == "duplicate":
+        logger.info("Duplicate source detected: %s → %s", raw_path, state["duplicate_of"])
+
     fs.save_raw_file(project, file.filename, content_str)
 
-    raw_path = f"{project}/{file.filename}"
     logger.info("Ingest file: %s project=%s", raw_path, project)
     result = agent.run(raw_path)
     logger.info("Ingest result: success=%s created=%d updated=%d",

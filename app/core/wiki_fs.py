@@ -13,6 +13,7 @@ RULES:
 from __future__ import annotations
 
 import difflib
+import hashlib
 import json
 import logging
 import re
@@ -173,6 +174,10 @@ class WikiFS:
         self.limits = settings.limits
         self._ensure_structure()
 
+    @property
+    def state_dir(self) -> Path:
+        return self.root / ".state"
+
     # ── Initialisation ──────────────────────────────────────────
 
     def _ensure_structure(self) -> None:
@@ -181,6 +186,7 @@ class WikiFS:
             self.wiki_dir,
             self.raw_dir / "_general",
             self.root,
+            self.state_dir,
         ]:
             d.mkdir(parents=True, exist_ok=True)
 
@@ -494,6 +500,7 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         target = target_dir / filename
         target.write_text(content, encoding="utf-8")
         logger.info("Raw file saved: path=%s/%s chars=%d", project, filename, len(content))
+        self.update_source_manifest(f"{project}/{filename}", content)
         return target
 
     def get_raw_project(self, raw_path: Path) -> str:
@@ -508,6 +515,82 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         if len(parts) >= 2:
             return parts[0]
         return "_general"
+
+    # ── Source manifest (state) ────────────────────────────────────
+
+    def _manifest_path(self) -> Path:
+        return self.state_dir / "source_manifest.json"
+
+    def _read_manifest(self) -> dict:
+        path = self._manifest_path()
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+        return {}
+
+    def _write_manifest(self, manifest: dict) -> None:
+        self._manifest_path().write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    def _sha256(self, content: str) -> str:
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    def check_source_state(self, relative_path: str, content: str) -> dict:
+        """Check if a source file has changed since last ingest.
+
+        Returns::
+
+            {"status": "new"|"changed"|"unchanged"|"duplicate",
+             "sha256": str, "duplicate_of": str | None}
+        """
+        manifest = self._read_manifest()
+        sha = self._sha256(content)
+        now = datetime.now().isoformat(timespec="seconds")
+
+        if relative_path in manifest:
+            entry = manifest[relative_path]
+            if entry["sha256"] == sha:
+                return {"status": "unchanged", "sha256": sha, "duplicate_of": None}
+            return {"status": "changed", "sha256": sha, "duplicate_of": None}
+
+        # Check for duplicate (same hash, different path)
+        for path, entry in manifest.items():
+            if entry["sha256"] == sha:
+                return {"status": "duplicate", "sha256": sha, "duplicate_of": path}
+
+        return {"status": "new", "sha256": sha, "duplicate_of": None}
+
+    def update_source_manifest(self, relative_path: str, content: str) -> None:
+        """Record or update a source file in the manifest after ingest."""
+        manifest = self._read_manifest()
+        sha = self._sha256(content)
+        now = datetime.now().isoformat(timespec="seconds")
+
+        if relative_path in manifest:
+            manifest[relative_path]["sha256"] = sha
+            manifest[relative_path]["last_seen"] = now
+            manifest[relative_path]["last_ingested"] = now
+            manifest[relative_path]["status"] = "active"
+            manifest[relative_path]["size"] = len(content)
+        else:
+            manifest[relative_path] = {
+                "sha256": sha,
+                "size": len(content),
+                "first_seen": now,
+                "last_seen": now,
+                "last_ingested": now,
+                "status": "active",
+            }
+
+        self._write_manifest(manifest)
+
+    def mark_source_removed(self, relative_path: str) -> None:
+        """Mark a source file as removed (when raw file is deleted)."""
+        manifest = self._read_manifest()
+        if relative_path in manifest:
+            manifest[relative_path]["status"] = "removed"
+            self._write_manifest(manifest)
 
     # ── Conflicts operations ─────────────────────────────────────
 

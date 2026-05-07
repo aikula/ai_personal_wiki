@@ -308,3 +308,27 @@ class TestGraphMetrics:
         metrics = fs.get_graph_metrics()
         assert metrics["orphan_count"] >= 1
         assert "orphan/page" in metrics["orphan_slugs"]
+
+
+# ── Source manifest ───────────────────────────────────────────
+
+class TestSourceManifest:
+    def test_new_source(self, fs):
+        state = fs.check_source_state("proj/file.md", "# content")
+        assert state["status"] == "new"
+
+    def test_unchanged_after_save(self, fs):
+        fs.save_raw_file("proj", "file.md", "# content")
+        state = fs.check_source_state("proj/file.md", "# content")
+        assert state["status"] == "unchanged"
+
+    def test_changed_after_modify(self, fs):
+        fs.save_raw_file("proj", "file.md", "# v1")
+        state = fs.check_source_state("proj/file.md", "# v2")
+        assert state["status"] == "changed"
+
+    def test_duplicate_detected(self, fs):
+        fs.save_raw_file("proj", "a.md", "# same")
+        state = fs.check_source_state("proj/b.md", "# same")
+        assert state["status"] == "duplicate"
+        assert "a.md" in state["duplicate_of"]

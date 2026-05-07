@@ -224,12 +224,15 @@ Generate the wiki page. Rules:
 - Link known entities/concepts from the candidate list on first meaningful mention
 - Do not invent slugs that are not in the candidate list
 - Do not link every repeated mention
+- Add provenance markers for factual claims: `` ^[raw/source.md] `` after each important claim
+- Mark inferred knowledge as `` [INFERRED] `` and ambiguous as `` [AMBIGUOUS] ``
 
 Output JSON schema:
 {{"meta": {{"title": str, "project": str, "type": str, "tags": list,
            "confidence": float, "sources": int, "last_confirmed": str,
            "supersedes": null, "superseded_by": null, "created": str,
-           "synopsis": str}},
+           "synopsis": str, "provenance_state": str,
+           "needs_review": bool, "source_coverage": str}},
  "content": str}}
 """
 

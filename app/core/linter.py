@@ -12,6 +12,7 @@ Checks (all in-process, no LLM, no I/O beyond reading):
   8. stale_page         — confidence < threshold AND last_confirmed > N days
   9. duplicate_title    — two pages with same title in same project
  10. missing_wikilink   — known alias appears without [[link]]
+ 11. invalid_provenance — ^[raw/...] marker references non-existent raw file
 
 LLM checks (audit_agent, not here):
   - factual contradictions
@@ -44,6 +45,7 @@ ISSUE_KINDS = {
     "stale_page",
     "duplicate_title",
     "missing_wikilink",
+    "invalid_provenance",
 }
 
 
@@ -143,6 +145,7 @@ class WikiLinter:
             issues += self._check_superseded_active(page)
             issues += self._check_stale(page)
             issues += self._check_missing_wikilinks(page)
+            issues += self._check_provenance(page)
 
         # Global checks (always run for full picture)
         issues += self._check_orphans(target_pages)
@@ -349,6 +352,22 @@ class WikiLinter:
         if not hasattr(self, "_candidates_cache"):
             self._candidates_cache = self.fs.build_link_candidates()
         return self._candidates_cache
+
+    def _check_provenance(self, page: WikiPage) -> list[LintIssue]:
+        """Validate ^[raw/...] provenance markers reference existing raw files."""
+        issues = []
+        markers = re.findall(r"\^\[raw/([^\]]+)\]", page.content)
+        for ref in markers:
+            raw_path = self.fs.raw_dir / ref
+            if not raw_path.exists():
+                issues.append(LintIssue(
+                    slug=page.slug, line=0,
+                    kind="invalid_provenance",
+                    detail=f"Provenance marker references non-existent raw file: raw/{ref}",
+                    severity="warning",
+                    fix_hint=f"Remove or correct the provenance marker ^[raw/{ref}]",
+                ))
+        return issues
 
     # ── Global checks ────────────────────────────────────────────
 

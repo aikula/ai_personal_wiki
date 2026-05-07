@@ -127,3 +127,18 @@ class TestLintMissingWikilink:
                       content="See [[known/page]] for details")
         report = linter.lint(slugs=["test/page"])
         assert not any(e.kind == "missing_wikilink" for e in report.issues)
+
+
+class TestLintProvenance:
+    def test_valid_provenance_no_error(self, linter, fs):
+        fs.save_raw_file("proj", "source.md", "# Source")
+        fs.write_page("test/page", meta=_meta(),
+                      content="Fact ^[raw/proj/source.md]")
+        report = linter.lint(slugs=["test/page"])
+        assert not any(e.kind == "invalid_provenance" for e in report.issues)
+
+    def test_invalid_provenance_detected(self, linter, fs):
+        fs.write_page("test/page", meta=_meta(),
+                      content="Fact ^[raw/nonexistent/source.md]")
+        report = linter.lint(slugs=["test/page"])
+        assert any(e.kind == "invalid_provenance" for e in report.issues)
