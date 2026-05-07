@@ -26,13 +26,14 @@ import json
 import logging
 import os
 import re
-import yaml
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
+import yaml
+
 from app.config import Settings
-from app.core.linter import LintReport, WikiLinter
+from app.core.linter import LintReport
 from app.core.llm_client import LLMClient
 from app.core.token_budget import ContextBudget
 from app.core.wiki_fs import WikiFS, WikiPage
@@ -335,7 +336,6 @@ class AuditAgent:
                     })
 
         # 3. High tag overlap within same project
-        from collections import Counter
         for p in pages:
             if p.page_type in ("index", "log"):
                 continue

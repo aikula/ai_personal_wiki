@@ -1,5 +1,6 @@
-import pytest
 from datetime import date, timedelta
+
+import pytest
 
 from app.config import Settings
 from app.core.linter import WikiLinter

@@ -27,7 +27,6 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from app.config import Settings
-from app.core.utils import heading_to_anchor
 from app.core.wiki_fs import WikiFS, WikiPage
 
 # ─────────────────────────────────────────────

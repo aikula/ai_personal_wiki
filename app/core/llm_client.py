@@ -75,7 +75,7 @@ class LLMClient:
         messages: list[dict],
         temperature: float | None = None,
     ) -> Generator[str, None, None]:
-        full_messages = [{"role": "system", "content": system}] + messages
+        full_messages = [{"role": "system", "content": system}, *messages]
         request_temperature = (
             self.default_temperature if temperature is None else temperature
         )

@@ -20,8 +20,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import chat, conflicts, ingest, wiki
 from app.api.routes import audit as audit_route
+from app.api.routes import chat, conflicts, ingest, wiki
 from app.api.routes import settings as settings_route
 from app.config import setup_logging
 

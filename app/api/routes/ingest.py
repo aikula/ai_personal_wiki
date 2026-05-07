@@ -37,7 +37,7 @@ router = APIRouter(prefix="/api/ingest", tags=["ingest"])
 @router.post("", response_model=IngestFileResponse)
 async def ingest_file(
     project: str = Form(default="_general"),
-    file: UploadFile = File(...),
+    file: UploadFile = File(...),  # noqa: B008
     agent: Annotated[IngestAgent, Depends(get_ingest_agent)] = None,
     fs: Annotated[WikiFS, Depends(get_wiki_fs)] = None,
 ):
@@ -93,7 +93,7 @@ async def ingest_file(
 @router.post("/batch")
 async def ingest_batch(
     project: str = Form(default="_general"),
-    files: list[UploadFile] = File(...),
+    files: list[UploadFile] = File(...),  # noqa: B008
     agent: Annotated[IngestAgent, Depends(get_ingest_agent)] = None,
     fs: Annotated[WikiFS, Depends(get_wiki_fs)] = None,
 ):
@@ -235,7 +235,7 @@ async def apply_draft(
         applied = fs.apply_draft(draft_id)
         return {"status": "applied", "pages": applied}
     except Exception as exc:
-        raise HTTPException(400, str(exc))
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post("/drafts/{draft_id}/reject")

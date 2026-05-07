@@ -274,7 +274,7 @@ class TestLinkCandidates:
         candidates = fs.build_link_candidates()
         slugs = [c["slug"] for c in candidates]
         assert "proj/page" in slugs
-        match = [c for c in candidates if c["slug"] == "proj/page"][0]
+        match = next(c for c in candidates if c["slug"] == "proj/page")
         assert match["title"] == "My Page"
         assert "page" in match["aliases"]
 
