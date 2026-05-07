@@ -71,7 +71,16 @@ async def get_wiki_page(
         wikilinks=page.wikilinks,
         superseded_by=page.meta.get("superseded_by"),
         supersedes=page.meta.get("supersedes"),
+        synopsis=page.meta.get("synopsis", ""),
     )
+
+
+@router.get("/metrics")
+async def get_wiki_metrics(
+    fs: Annotated[WikiFS, Depends(get_wiki_fs)],
+):
+    """Return graph metrics for the wiki knowledge base."""
+    return fs.get_graph_metrics()
 
 
 @router.get("/search", response_model=WikiSearchResponse)

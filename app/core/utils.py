@@ -101,3 +101,83 @@ def validate_slug(slug: str) -> None:
     for segment in slug.split("/"):
         if not segment:
             raise ValueError(f"Slug {slug!r} contains empty segment")
+
+
+# ═══════════════════════════════════════════════════════════════
+# Conservative auto-linker
+# ═══════════════════════════════════════════════════════════════
+
+_SKIP_BLOCKS = re.compile(
+    r"```.*?```|`[^`]+`|\[\[[^\]]+\]\]|\[[^]]+\]\([^)]+\)|^#{1,6}\s.*$",
+    re.DOTALL | re.MULTILINE,
+)
+_AUTO_LINK_MAX = 6
+
+
+def auto_link(
+    content: str,
+    link_candidates: list[dict],
+    current_slug: str = "",
+) -> str:
+    """Post-process markdown content: add ``[[slug|text]]`` for known aliases.
+
+    Rules:
+    - Link first meaningful mention of each known alias (longest alias first).
+    - Skip headings, code blocks, existing wikilinks, URLs.
+    - Skip the current page's own slug and title.
+    - Cap total additions at ``_AUTO_LINK_MAX``.
+
+    Returns modified content.
+    """
+    # Build alias → slug map, longest alias first to match specific before general
+    alias_map: list[tuple[str, str]] = []
+    for c in link_candidates:
+        if c["slug"] == current_slug:
+            continue
+        for alias in c.get("aliases", []):
+            if len(alias) < 4:
+                continue
+            alias_map.append((alias.strip(), c["slug"]))
+    alias_map.sort(key=lambda x: -len(x[0]))
+
+    added = 0
+    result_lines: list[str] = []
+    in_code_block = False
+
+    for line in content.split("\n"):
+        if line.startswith("```"):
+            in_code_block = not in_code_block
+            result_lines.append(line)
+            continue
+        if in_code_block or line.startswith("#") or "[[]]" in line:
+            result_lines.append(line)
+            continue
+        if "[" in line and "]" in line and "(http" in line:
+            result_lines.append(line)
+            continue
+
+        modified = line
+        for alias, slug in alias_map:
+            if added >= _AUTO_LINK_MAX:
+                break
+            # Skip if already linked or in a code span
+            if f"[[{slug}" in modified or f"]]{alias}" in modified:
+                continue
+            # Replace first occurrence of alias that is not already linked
+            pattern = re.compile(
+                rf"(?<!\[\[)\b{re.escape(alias)}\b(?!\]\])", re.IGNORECASE
+            )
+            match = pattern.search(modified)
+            if not match:
+                continue
+            start = match.start()
+            # Skip if inside an existing markdown link or code span
+            prefix = modified[max(0, start - 1):start]
+            if prefix in ("[", "`"):
+                continue
+            modified = pattern.sub(f"[[{slug}|{alias}]]", modified, count=1)
+            added += 1
+
+        result_lines.append(modified)
+
+    return "\n".join(result_lines)

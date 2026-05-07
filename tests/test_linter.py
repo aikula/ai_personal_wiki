@@ -109,3 +109,21 @@ class TestLintDuplicateTitle:
                       content="# B")
         report = linter.lint(slugs=["proj/a", "proj/b"])
         assert any(e.kind == "duplicate_title" for e in report.issues)
+
+
+class TestLintMissingWikilink:
+    def test_detects_missing_wikilink(self, linter, fs):
+        fs.write_page("known/page", meta=_meta(title="Known Page", project="proj"),
+                      content="# Known")
+        fs.write_page("test/page", meta=_meta(title="Test", project="proj"),
+                      content="The Known Page is important")
+        report = linter.lint(slugs=["test/page"])
+        assert any(e.kind == "missing_wikilink" for e in report.issues)
+
+    def test_skips_when_already_linked(self, linter, fs):
+        fs.write_page("known/page", meta=_meta(title="Known Page", project="proj"),
+                      content="# Known")
+        fs.write_page("test/page", meta=_meta(title="Test", project="proj"),
+                      content="See [[known/page]] for details")
+        report = linter.lint(slugs=["test/page"])
+        assert not any(e.kind == "missing_wikilink" for e in report.issues)

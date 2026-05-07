@@ -122,6 +122,7 @@ class WikiPageResponse(BaseModel):
     wikilinks: list[str]    # outgoing [[links]]
     superseded_by: str | None
     supersedes: str | None
+    synopsis: str = ""
 
 
 class WikiSearchRequest(BaseModel):

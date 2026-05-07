@@ -310,6 +310,73 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
             "open_conflicts": self.count_open_conflicts(),
         }
 
+    def build_link_candidates(self, project: str | None = None) -> list[dict]:
+        """Build compact list of known wiki pages for linker prompt injection.
+
+        Each candidate::
+
+            {"slug": str, "title": str, "project": str, "type": str,
+             "tags": list[str], "aliases": list[str],
+             "synopsis": str}
+        """
+        candidates = []
+        for page in self.list_pages(project=project):
+            if page.page_type in ("index", "log") or page.slug in ("index", "log"):
+                continue
+            aliases = [page.title]
+            last = page.slug.rstrip("/").split("/")[-1]
+            aliases.append(last.replace("-", " "))
+            aliases.append(last)
+            aliases.extend(t for t in page.tags if len(t) > 3)
+            candidates.append({
+                "slug": page.slug,
+                "title": page.title,
+                "project": page.project,
+                "type": page.page_type,
+                "tags": page.tags,
+                "synopsis": page.meta.get("synopsis", ""),
+                "aliases": list(dict.fromkeys(a for a in aliases if a)),
+            })
+        return candidates
+
+    def get_graph_metrics(self) -> dict:
+        """Compute graph-level metrics for the wiki."""
+        pages = self.list_pages()
+        incoming: dict[str, set[str]] = {}
+        outgoing_count: dict[str, int] = {}
+        for p in pages:
+            incoming.setdefault(p.slug, set())
+            outgoing_count[p.slug] = 0
+
+        for p in pages:
+            for linked in p.wikilinks:
+                if linked in incoming:
+                    incoming[linked].add(p.slug)
+                outgoing_count[p.slug] += 1
+
+        non_index = [p for p in pages if p.page_type not in ("index", "log")]
+        orphans = [p for p in non_index if not incoming.get(p.slug)]
+        no_outgoing = [p for p in non_index if outgoing_count.get(p.slug, 0) == 0]
+        no_related = [p.slug for p in pages
+                      if "связанные страницы" not in p.content.lower()
+                      and p.page_type not in ("index", "log")]
+
+        return {
+            "total_pages": len(pages),
+            "non_index_pages": len(non_index),
+            "total_wikilinks": sum(outgoing_count.values()),
+            "avg_outgoing_per_page": (
+                round(sum(outgoing_count[p.slug] for p in non_index) / len(non_index), 2)
+                if non_index else 0
+            ),
+            "orphan_count": len(orphans),
+            "orphan_slugs": [p.slug for p in orphans],
+            "pages_with_no_outgoing": len(no_outgoing),
+            "pages_with_no_outgoing_slugs": [p.slug for p in no_outgoing],
+            "pages_without_related_section": len(no_related),
+            "pages_without_related_section_slugs": no_related,
+        }
+
     def search_pages(self, query: str, project: str | None = None) -> list[dict]:
         """
         Full-text grep search across wiki pages.

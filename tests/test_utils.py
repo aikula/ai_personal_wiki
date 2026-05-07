@@ -1,6 +1,6 @@
 import pytest
 
-from app.core.utils import extract_wikilinks, now_iso, parse_json_block, validate_slug
+from app.core.utils import auto_link, extract_wikilinks, now_iso, parse_json_block, validate_slug
 
 
 class TestParseJsonBlock:
@@ -102,3 +102,42 @@ class TestValidateSlug:
     def test_spaces_raises(self):
         with pytest.raises(ValueError, match="invalid characters"):
             validate_slug("my app/page")
+
+
+class TestAutoLink:
+    def _candidate(self, slug, title, aliases=None):
+        return {"slug": slug, "title": title, "project": "_general",
+                "type": "entity", "tags": [], "synopsis": "",
+                "aliases": aliases or [title, slug.split("/")[-1]]}
+
+    def test_links_alias(self):
+        content = "Redis is used for caching"
+        candidates = [self._candidate("backend/redis", "Redis", ["Redis"])]
+        result = auto_link(content, candidates)
+        assert "[[backend/redis|Redis]]" in result
+
+    def test_skips_existing_wikilink(self):
+        content = "See [[backend/redis|Redis]] for details"
+        candidates = [self._candidate("backend/redis", "Redis", ["Redis"])]
+        result = auto_link(content, candidates)
+        assert result == content  # unchanged
+
+    def test_skips_code_block(self):
+        content = "```\nRedis config\n```\nText about Redis"
+        candidates = [self._candidate("backend/redis", "Redis", ["Redis"])]
+        result = auto_link(content, candidates)
+        # Should not link inside code block, but should link later mention
+        assert "[[backend/redis|Redis]]" in result
+
+    def test_caps_at_max(self):
+        content = "Redis Redis Redis Redis Redis Redis Redis Redis"
+        candidates = [self._candidate("backend/redis", "Redis", ["Redis"])]
+        result = auto_link(content, candidates)
+        count = result.count("[[backend/redis|Redis]]")
+        assert count == 1  # one alias → at most one replacement
+
+    def test_skips_short_alias(self):
+        content = "App is running"
+        candidates = [self._candidate("myapp", "App", ["App"])]
+        result = auto_link(content, candidates)
+        assert "[[myapp|App]]" not in result  # App is only 3 chars

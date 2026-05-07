@@ -11,6 +11,7 @@ Checks (all in-process, no LLM, no I/O beyond reading):
   7. superseded_active  — superseded page still linked from others
   8. stale_page         — confidence < threshold AND last_confirmed > N days
   9. duplicate_title    — two pages with same title in same project
+ 10. missing_wikilink   — known alias appears without [[link]]
 
 LLM checks (audit_agent, not here):
   - factual contradictions
@@ -42,6 +43,7 @@ ISSUE_KINDS = {
     "superseded_active",
     "stale_page",
     "duplicate_title",
+    "missing_wikilink",
 }
 
 
@@ -140,6 +142,7 @@ class WikiLinter:
             issues += self._check_path_links(page)
             issues += self._check_superseded_active(page)
             issues += self._check_stale(page)
+            issues += self._check_missing_wikilinks(page)
 
         # Global checks (always run for full picture)
         issues += self._check_orphans(target_pages)
@@ -306,6 +309,46 @@ class WikiLinter:
                 fix_hint="Re-confirm facts or update sources",
             )]
         return []
+
+    def _check_missing_wikilinks(self, page: WikiPage) -> list[LintIssue]:
+        """Flag known page titles/aliases that appear as plain text (not linked)."""
+        candidates = self._get_link_candidates()
+        issues = []
+        page_text_lower = page.content.lower()
+
+        for c in candidates:
+            if c["slug"] == page.slug:
+                continue
+            for alias in c.get("aliases", []):
+                if len(alias) < 4:
+                    continue
+                alias_lower = alias.lower()
+                if alias_lower not in page_text_lower:
+                    continue
+                # Check not already linked
+                if f"[[{c['slug']}" in page.content:
+                    continue
+                # Skip index/log pages
+                if page.page_type in ("index", "log"):
+                    continue
+                # Avoid flagging on overly generic aliases
+                if alias_lower in ("page", "service", "api", "app", "config"):
+                    continue
+                issues.append(LintIssue(
+                    slug=page.slug, line=0,
+                    kind="missing_wikilink",
+                    detail=f"'{alias}' appears but [[{c['slug']}]] is not linked",
+                    severity="info",
+                    fix_hint=f"Add [[{c['slug']}|{alias}]] on first mention",
+                ))
+                break  # one match per candidate
+
+        return issues
+
+    def _get_link_candidates(self) -> list[dict]:
+        if not hasattr(self, "_candidates_cache"):
+            self._candidates_cache = self.fs.build_link_candidates()
+        return self._candidates_cache
 
     # ── Global checks ────────────────────────────────────────────
 

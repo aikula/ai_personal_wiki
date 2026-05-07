@@ -29,7 +29,7 @@ from app.core.interpreter import CodeInterpreter
 from app.core.linter import LintReport, WikiLinter
 from app.core.llm_client import LLMClient
 from app.core.token_budget import ContextBudget
-from app.core.utils import now_iso
+from app.core.utils import auto_link, now_iso
 from app.core.wiki_fs import ConflictEntry, IngestLog, WikiFS, WikiPage
 
 logger = logging.getLogger("wiki.ingest")
@@ -183,6 +183,7 @@ You will receive:
 - One PlannedPage specification
 - Source sections assigned to this page
 - Existing page content (if updating)
+- Link candidate list — known wiki pages for cross-referencing
 - AGENTS.md and skills.md for conventions
 
 Output ONLY valid JSON: {{"meta": {{...}}, "content": "..."}}
@@ -200,6 +201,9 @@ STEP2_PROMPT = """## Planned Page
 ## Existing Page Content (empty if creating new)
 {existing_content}
 
+## Known Wiki Pages / Link Candidates
+{link_candidates}
+
 ## Today's Date
 {today}
 
@@ -214,11 +218,17 @@ Generate the wiki page. Rules:
 - last_confirmed: {today}
 - Max content length: {char_limit} chars total (including frontmatter)
 - End content with ## Sources section listing source_file
+- Include a `synopsis` field (2-3 sentence summary for search/preview)
+- Add a `## Связанные страницы` section when link candidates exist (at least 2, project-local first)
+- Link known entities/concepts from the candidate list on first meaningful mention
+- Do not invent slugs that are not in the candidate list
+- Do not link every repeated mention
 
 Output JSON schema:
 {{"meta": {{"title": str, "project": str, "type": str, "tags": list,
            "confidence": float, "sources": int, "last_confirmed": str,
-           "supersedes": null, "superseded_by": null, "created": str}},
+           "supersedes": null, "superseded_by": null, "created": str,
+           "synopsis": str}},
  "content": str}}
 """
 
@@ -471,12 +481,23 @@ print(json.dumps(result))
             source_sections_text = source_sections_text[:3000]
             existing_trimmed = existing_content[:2000]
 
+            # Build compact link candidate list for prompt
+            candidates = self.fs.build_link_candidates(project=planned.project)
+            link_lines = []
+            for c in candidates[:15]:
+                alias_str = "; ".join(c["aliases"][:3])
+                link_lines.append(
+                    f"- [[{c['slug']}]] — {c['title']}; aliases: {alias_str}"
+                )
+            link_candidates_text = "\n".join(link_lines) if link_lines else "(no candidates yet)"
+
             prompt = STEP2_PROMPT.format(
                 planned_page_json=json.dumps(
                     _planned_page_to_dict(planned), ensure_ascii=False, indent=2
                 ),
                 source_sections=source_sections_text,
                 existing_content=existing_trimmed,
+                link_candidates=link_candidates_text,
                 today=today,
                 confidence=planned.confidence,
                 sources_count=planned.sources_count,
@@ -512,6 +533,10 @@ print(json.dumps(result))
             # Ensure created field
             if not meta.get("created"):
                 meta["created"] = today
+
+            # Auto-link post-processing: link known aliases
+            all_candidates = self.fs.build_link_candidates()
+            content = auto_link(content, all_candidates, current_slug=planned.slug)
 
             try:
                 self.fs.write_page(

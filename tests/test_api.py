@@ -80,3 +80,29 @@ async def test_rebuild_requires_confirm(client):
 async def test_settings_get(client):
     resp = await client.get("/api/settings")
     assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_metrics_endpoint(client):
+    resp = await client.get("/api/wiki/metrics")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "total_pages" in data
+    assert "orphan_count" in data
+
+
+@pytest.mark.asyncio
+async def test_page_with_synopsis(client, test_settings):
+    from app.core.wiki_fs import WikiFS
+    fs = WikiFS(test_settings)
+    fs.write_page("synopsis/test", meta={
+        "title": "Synopsis Page", "project": "_general", "type": "entity",
+        "tags": [], "confidence": 1.0, "sources": 1,
+        "last_confirmed": "2026-05-07", "supersedes": None,
+        "superseded_by": None, "created": "2026-05-07",
+        "synopsis": "A short summary",
+    }, content="# Test")
+    resp = await client.get("/api/wiki/page/synopsis/test")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["synopsis"] == "A short summary"

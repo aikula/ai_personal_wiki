@@ -252,3 +252,59 @@ class TestReset:
         fs.full_reset_wiki()
         assert fs.read_page("temp/page") is None
         assert (fs.root / "wiki" / "index.md").exists()
+
+
+# ── Link candidates and graph metrics ─────────────────────────
+
+class TestLinkCandidates:
+    def _meta(self, **kw):
+        base = {
+            "title": "Test", "project": "_general", "type": "entity",
+            "tags": ["test", "demo"], "confidence": 1.0, "sources": 1,
+            "last_confirmed": date.today().isoformat(),
+            "supersedes": None, "superseded_by": None,
+            "created": date.today().isoformat(),
+        }
+        base.update(kw)
+        return base
+
+    def test_build_link_candidates(self, fs):
+        fs.write_page("proj/page", meta=self._meta(title="My Page", project="proj"),
+                       content="# Page")
+        candidates = fs.build_link_candidates()
+        slugs = [c["slug"] for c in candidates]
+        assert "proj/page" in slugs
+        match = [c for c in candidates if c["slug"] == "proj/page"][0]
+        assert match["title"] == "My Page"
+        assert "page" in match["aliases"]
+
+    def test_build_link_candidates_excludes_index_log(self, fs):
+        cand = fs.build_link_candidates()
+        slugs = [c["slug"] for c in cand]
+        assert "index" not in slugs
+        assert "log" not in slugs
+
+
+class TestGraphMetrics:
+    def _meta(self, **kw):
+        base = {
+            "title": "P", "project": "_general", "type": "entity",
+            "tags": [], "confidence": 1.0, "sources": 1,
+            "last_confirmed": date.today().isoformat(),
+            "supersedes": None, "superseded_by": None,
+            "created": date.today().isoformat(),
+        }
+        base.update(kw)
+        return base
+
+    def test_basic_metrics(self, fs):
+        metrics = fs.get_graph_metrics()
+        assert "total_pages" in metrics
+        assert "avg_outgoing_per_page" in metrics
+        assert "orphan_count" in metrics
+
+    def test_orphan_detected(self, fs):
+        fs.write_page("orphan/page", meta=self._meta(), content="# Orphan")
+        metrics = fs.get_graph_metrics()
+        assert metrics["orphan_count"] >= 1
+        assert "orphan/page" in metrics["orphan_slugs"]

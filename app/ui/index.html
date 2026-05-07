@@ -217,6 +217,12 @@
     .page-content p { margin-bottom: 8px; }
     .page-content code { background: rgba(255,255,255,.08); padding: 1px 4px;
                           border-radius: 3px; font-size: 12px; }
+    .page-synopsis {
+      margin: 8px 0 12px; padding: 10px 14px;
+      background: var(--surface2); border-radius: 6px;
+      font-size: 13px; color: var(--text-dim); line-height: 1.5;
+      border-left: 3px solid var(--accent);
+    }
     .page-content pre { background: rgba(0,0,0,.4); padding: 10px;
                           border-radius: 6px; overflow-x: auto; margin: 6px 0; }
     .page-content table { width: 100%; border-collapse: collapse;
@@ -934,6 +940,9 @@ function WikiPanel({ highlightedSlug, onPageOpen }) {
                   <span key={t} className="page-tag">{t}</span>
                 ))}
               </div>
+              {pageData.synopsis && (
+                <div className="page-synopsis">{pageData.synopsis}</div>
+              )}
               <div className="page-content"
                    dangerouslySetInnerHTML={{ __html: pageData.content_html }}
                    onClick={e => {
