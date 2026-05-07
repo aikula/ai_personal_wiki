@@ -41,9 +41,12 @@ class LLMClient:
         json_mode: bool = False,
         max_tokens: int | None = None,
     ) -> str:
+        request_temperature = (
+            self.default_temperature if temperature is None else temperature
+        )
         kwargs = dict(
             model=self.model,
-            temperature=temperature or self.default_temperature,
+            temperature=request_temperature,
             timeout=self.timeout,
             messages=[
                 {"role": "system", "content": system},
@@ -73,11 +76,14 @@ class LLMClient:
         temperature: float | None = None,
     ) -> Generator[str, None, None]:
         full_messages = [{"role": "system", "content": system}] + messages
+        request_temperature = (
+            self.default_temperature if temperature is None else temperature
+        )
         logger.debug("LLM stream: model=%s messages=%d", self.model, len(full_messages))
         try:
             stream = self._client.chat.completions.create(
                 model=self.model,
-                temperature=temperature or self.default_temperature,
+                temperature=request_temperature,
                 timeout=self.timeout,
                 messages=full_messages,
                 stream=True,
