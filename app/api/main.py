@@ -8,7 +8,6 @@ Mounts:
   /api/conflicts — conflict queue management
   /api/settings  — LLM connection config
   /              — serves ui/index.html (SPA)
-  /wiki-data     — static mount for raw file access (read-only)
 """
 
 from __future__ import annotations

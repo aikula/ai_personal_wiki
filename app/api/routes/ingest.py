@@ -28,6 +28,7 @@ from app.api.models import (
     IngestFileResponse,
     RebuildRequest,
 )
+from app.core.utils import validate_project_name, validate_raw_filename
 
 logger = logging.getLogger("wiki.api.ingest")
 
@@ -46,7 +47,12 @@ async def ingest_file(
     File is saved to raw/<project>/<filename>, then processed.
     """
     if not file.filename or not file.filename.endswith(".md"):
-        raise HTTPException(400, "Only .md files are accepted")
+        raise HTTPException(400, "Принимаются только .md файлы")
+    try:
+        validate_project_name(project)
+        validate_raw_filename(file.filename)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
     content = await file.read()
     content_str = content.decode("utf-8")
@@ -101,9 +107,17 @@ async def ingest_batch(
     Upload and ingest multiple markdown files sequentially.
     Returns summary of all ingests.
     """
+    try:
+        validate_project_name(project)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     results = []
     for file in files:
         if not file.filename or not file.filename.endswith(".md"):
+            continue
+        try:
+            validate_raw_filename(file.filename)
+        except ValueError:
             continue
         content = await file.read()
         content_str = content.decode("utf-8")
@@ -131,6 +145,11 @@ async def list_raw_files(
     fs: Annotated[WikiFS, Depends(get_wiki_fs)] = None,
 ):
     """List raw markdown files, optionally filtered by project."""
+    if project is not None:
+        try:
+            validate_project_name(project)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
     files = fs.list_raw_files(project=project)
     return {
         "files": [
@@ -156,13 +175,17 @@ async def rebuild_wiki(
     Returns SSE stream with progress updates.
     """
     if not body.confirm:
-        raise HTTPException(400, "Must set confirm=true to rebuild")
+        raise HTTPException(400, "Необходимо установить confirm=true для перестройки")
 
     async def event_stream() -> AsyncGenerator[str, None]:
         queue: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def push_event(event: dict | None) -> None:
+            loop.call_soon_threadsafe(queue.put_nowait, event)
 
         def progress_callback(current: int, total: int, filename: str):
-            queue.put_nowait({
+            push_event({
                 "current": current,
                 "total": total,
                 "filename": filename,
@@ -173,16 +196,15 @@ async def rebuild_wiki(
             try:
                 logger.info("Rebuild requested")
                 result = agent.rebuild_from_scratch(progress_callback=progress_callback)
-                queue.put_nowait({"result": result, "status": "complete"})
+                push_event({"result": result, "status": "complete"})
                 logger.info("Rebuild completed: success=%d failed=%d",
                             result["success"], result["failed"])
             except Exception as exc:
                 logger.exception("Rebuild failed")
-                queue.put_nowait({"status": "error", "message": str(exc)})
+                push_event({"status": "error", "message": str(exc)})
             finally:
-                queue.put_nowait(None)
+                push_event(None)
 
-        loop = asyncio.get_event_loop()
         thread = loop.run_in_executor(None, run_rebuild)
 
         while True:
@@ -221,7 +243,7 @@ async def get_draft(
     """Get full draft details including diffs and candidate pages."""
     draft = fs.read_draft(draft_id)
     if draft is None:
-        raise HTTPException(404, f"Draft not found: {draft_id}")
+        raise HTTPException(404, f"Черновик не найден: {draft_id}")
     return draft
 
 
@@ -246,4 +268,4 @@ async def reject_draft(
     """Reject a draft: remove it without applying."""
     if fs.reject_draft(draft_id):
         return {"status": "rejected"}
-    raise HTTPException(404, f"Draft not found: {draft_id}")
+    raise HTTPException(404, f"Черновик не найден: {draft_id}")

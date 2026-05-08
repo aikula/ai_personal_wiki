@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Wiki Engine</title>
+  <title>Wiki Движок</title>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -124,6 +124,13 @@
       cursor: pointer;
     }
     .wikilink:hover { background: rgba(37,99,235,.08); }
+
+    /* provenance markers */
+    .provenance { font-size: 0.75em; vertical-align: super; }
+    .provenance a {
+      color: var(--text-dim); text-decoration: none; border-bottom: 1px dotted var(--text-dim);
+    }
+    .provenance a:hover { color: var(--accent); border-bottom-color: var(--accent); }
 
     .msg-meta { font-size: 11px; color: var(--text-dim); margin-top: 6px;
                  display: flex; gap: 8px; flex-wrap: wrap; }
@@ -474,7 +481,7 @@ function UploadModal({ onClose, onDone }) {
 
   const addFiles = fs => {
     const mds = [...fs].filter(f => f.name.endsWith('.md'));
-    if (mds.length < fs.length) toast('Only .md files accepted', 'error');
+    if (mds.length < fs.length) toast('Принимаются только .md файлы', 'error');
     setFiles(prev => [...prev, ...mds]);
   };
 
@@ -492,11 +499,11 @@ function UploadModal({ onClose, onDone }) {
       );
       const ok = results.filter(r => r.success).length;
       const conflicts = results.flatMap(r => r.conflict_ids || []).length;
-      toast(`Uploaded ${ok}/${files.length} files${conflicts ? `, ${conflicts} conflict(s)` : ''}`, 'success');
+      toast(`Загружено ${ok}/${files.length} файлов${conflicts ? `, конфликтов: ${conflicts}` : ''}`, 'success');
       onDone?.(results);
       onClose();
     } catch(e) {
-      toast(`Upload failed: ${e.message}`, 'error');
+      toast(`Ошибка загрузки: ${e.message}`, 'error');
     } finally {
       setUploading(false);
     }
@@ -505,10 +512,10 @@ function UploadModal({ onClose, onDone }) {
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
-        <h2>📂 Upload Documents</h2>
-        <label>Project</label>
+        <h2>📂 Загрузка документов</h2>
+        <label>Проект</label>
         <input value={project} onChange={e => setProject(e.target.value)}
-               placeholder="_general or project name" />
+               placeholder="_general или название проекта" />
         <div
           className={`dropzone ${dragOver ? 'drag-over' : ''}`}
           onClick={() => inputRef.current.click()}
@@ -516,7 +523,7 @@ function UploadModal({ onClose, onDone }) {
           onDragOver={e => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
         >
-          Drop .md files here or click to browse
+          Перетащите .md файлы сюда или нажмите для выбора
           <input ref={inputRef} type="file" accept=".md" multiple hidden
                  onChange={e => addFiles(e.target.files)} />
         </div>
@@ -534,7 +541,7 @@ function UploadModal({ onClose, onDone }) {
         )}
         {uploading && (
           <div className="upload-progress">
-            Processing {progress[0]}/{progress[1]}...
+            Обработка {progress[0]}/{progress[1]}...
             <div className="progress-bar">
               <div className="progress-fill"
                    style={{width: `${progress[1] ? (progress[0]/progress[1]*100) : 0}%`}} />
@@ -542,10 +549,10 @@ function UploadModal({ onClose, onDone }) {
           </div>
         )}
         <div className="modal-actions">
-          <button className="btn-cancel" onClick={onClose}>Cancel</button>
+          <button className="btn-cancel" onClick={onClose}>Отмена</button>
           <button className="btn-primary" onClick={upload}
                   disabled={!files.length || uploading}>
-            {uploading ? 'Uploading…' : `Upload ${files.length} file(s)`}
+            {uploading ? 'Загрузка…' : `Загрузить ${files.length} файл(ов)`}
           </button>
         </div>
       </div>
@@ -556,7 +563,7 @@ function UploadModal({ onClose, onDone }) {
 // ─────────────────────────────────────────────
 // Rebuild Modal
 // ─────────────────────────────────────────────
-function RebuildModal({ onClose }) {
+function RebuildModal({ onClose, onRefresh }) {
   const toast = React.useContext(ToastCtx);
   const [running, setRunning] = useState(false);
   const [log, setLog] = useState([]);
@@ -570,7 +577,7 @@ function RebuildModal({ onClose }) {
 
   const run = async () => {
     setRunning(true); setLog([]); setDone(false);
-    addLog('Starting rebuild from scratch…', 'info');
+    addLog('Начало перестройки с нуля…', 'info');
     try {
       const stop = createSSE(
         '/ingest/rebuild',
@@ -579,17 +586,17 @@ function RebuildModal({ onClose }) {
             addLog(`[${ev.current}/${ev.total}] ${ev.filename}`);
           } else if (ev.status === 'complete') {
             const r = ev.result;
-            addLog(`Done: ${r.success}✓ ${r.failed}✗ ${r.conflict_ids?.length||0} conflicts`, 'ok');
+            addLog(`Готово: ${r.success}✓ ${r.failed}✗ ${r.conflict_ids?.length||0} конфликтов`, 'ok');
             if (r.errors?.length) r.errors.forEach(e => addLog(`  ✗ ${e.file}: ${e.error}`, 'err'));
             setDone(true);
           } else if (ev.status === 'failed') {
-            addLog(`Error: ${JSON.stringify(ev)}`, 'err');
+            addLog(`Ошибка: ${JSON.stringify(ev)}`, 'err');
           }
         },
         () => setRunning(false)
       );
     } catch(e) {
-      addLog(`Error: ${e.message}`, 'err');
+      addLog(`Ошибка: ${e.message}`, 'err');
       setRunning(false);
     }
   };
@@ -597,7 +604,7 @@ function RebuildModal({ onClose }) {
   // POST trigger (SSE needs body)
   const handleRun = async () => {
     setRunning(true); setLog([]); setDone(false);
-    addLog('Starting rebuild…', 'info');
+    addLog('Начало перестройки…', 'info');
     const r = await fetch('/api/ingest/rebuild', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -619,9 +626,10 @@ function RebuildModal({ onClose }) {
           if (ev.status === 'processing') addLog(`[${ev.current}/${ev.total}] ${ev.filename}`);
           else if (ev.status === 'complete') {
             const res = ev.result;
-            addLog(`Done: ${res.success}✓  ${res.failed}✗  conflicts: ${res.conflict_ids?.length||0}`, 'ok');
+            addLog(`Готово: ${res.success}✓  ${res.failed}✗  конфликтов: ${res.conflict_ids?.length||0}`, 'ok');
             res.errors?.forEach(e => addLog(`  ✗ ${e.file}: ${e.error}`, 'err'));
             setDone(true);
+            if (onRefresh) onRefresh();
           }
         } catch {}
       }
@@ -632,21 +640,21 @@ function RebuildModal({ onClose }) {
   return (
     <div className="modal-overlay" onClick={e => e.target===e.currentTarget && !running && onClose()}>
       <div className="modal">
-        <h2>🔄 Rebuild Wiki from RAW</h2>
+        <h2>🔄 Перестройка Wiki из RAW</h2>
         <p style={{fontSize:13, color:'var(--red)', marginBottom:12}}>
-          ⚠️ This will DELETE all wiki pages and rebuild from scratch.
-          Raw files and skills.md are preserved.
+          ⚠️ Это УДАЛИТ все wiki-страницы и перестроит их с нуля.
+          Исходные файлы и skills.md будут сохранены.
         </p>
         <div className="rebuild-log" ref={logRef}>
           {log.map((l,i) => <div key={i} className={l.cls}>{l.text}</div>)}
-          {!log.length && <span>Click "Run Rebuild" to start.</span>}
+          {!log.length && <span>Нажмите «Запустить перестройку» для начала.</span>}
         </div>
         <div className="modal-actions" style={{marginTop:12}}>
-          <button className="btn-cancel" onClick={onClose} disabled={running}>Close</button>
+          <button className="btn-cancel" onClick={onClose} disabled={running}>Закрыть</button>
           <button className="btn-primary danger" onClick={handleRun}
                   disabled={running || done}
                   style={{background: done ? 'var(--green)' : 'var(--red)'}}>
-            {running ? 'Rebuilding…' : done ? 'Complete ✓' : 'Run Rebuild'}
+            {running ? 'Перестройка…' : done ? 'Завершено ✓' : 'Запустить перестройку'}
           </button>
         </div>
       </div>
@@ -684,7 +692,7 @@ function ConflictsPanel() {
       toast(res.message, 'success');
       await load();
     } catch(e) {
-      toast(`Failed: ${e.message}`, 'error');
+      toast(`Ошибка: ${e.message}`, 'error');
     } finally {
       setResolving(r => ({...r, [id]: false}));
     }
@@ -695,11 +703,11 @@ function ConflictsPanel() {
     if (!comment?.trim()) return;
     try {
       await api.post(`/conflicts/${id}/comment`, { comment });
-      toast('Comment added', 'success');
+      toast('Комментарий добавлен', 'success');
       setAddingComment(a => ({...a, [id]: false}));
       setComments(c => ({...c, [id]: ''}));
     } catch(e) {
-      toast(`Failed: ${e.message}`, 'error');
+      toast(`Ошибка: ${e.message}`, 'error');
     }
   };
 
@@ -709,16 +717,16 @@ function ConflictsPanel() {
     <div style={{display:'flex', flexDirection:'column', flex:1, overflow:'hidden'}}>
       <div className="tab-bar">
         <div className={`tab ${tab==='open'?'active':''}`} onClick={()=>setTab('open')}>
-          Open {data.total_open > 0 && <span className="badge">{data.total_open}</span>}
+          Открытые {data.total_open > 0 && <span className="badge">{data.total_open}</span>}
         </div>
         <div className={`tab ${tab==='resolved'?'active':''}`} onClick={()=>setTab('resolved')}>
-          Resolved ({data.resolved.length})
+          Решённые ({data.resolved.length})
         </div>
       </div>
       <div style={{flex:1, overflowY:'auto'}}>
         {list.length === 0 && (
           <div style={{padding:24, textAlign:'center', color:'var(--text-dim)', fontSize:13}}>
-            {tab==='open' ? '✓ No open conflicts' : 'No resolved conflicts'}
+            {tab==='open' ? '✓ Нет открытых конфликтов' : 'Нет решённых конфликтов'}
           </div>
         )}
         {list.map(c => (
@@ -731,7 +739,40 @@ function ConflictsPanel() {
               <span style={{color:'var(--accent)'}}>[[{c.page_a_slug}]]</span>
               {' vs '}<span style={{color:'var(--accent2)'}}>{c.page_b_ref}</span>
             </div>
-            {c.context_a && <div className="conflict-ctx">{c.context_a}</div>}
+            {c.description && (
+              <div style={{
+                background:'rgba(255,165,0,0.08)', border:'1px solid rgba(255,165,0,0.25)',
+                borderRadius:6, padding:'8px 12px', marginBottom:8, fontSize:12,
+                color:'var(--text)', lineHeight:1.5,
+              }}>
+                <span style={{color:'#f90', fontWeight:600, marginRight:6}}>⚠ Суть конфликта:</span>
+                {c.description}
+              </div>
+            )}
+            {(c.context_a || c.context_b) && (
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:8}}>
+                {c.context_a && (
+                  <div style={{background:'rgba(100,149,237,0.08)', borderLeft:'3px solid var(--accent)', padding:'6px 10px', borderRadius:4}}>
+                    <div style={{fontSize:10, color:'var(--accent)', fontWeight:600, marginBottom:4}}>
+                      📄 В ВИКИ [[{c.page_a_slug}]]
+                    </div>
+                    <div style={{fontSize:11, color:'var(--text-dim)', lineHeight:1.5, whiteSpace:'pre-wrap'}}>
+                      {c.context_a}
+                    </div>
+                  </div>
+                )}
+                {c.context_b && (
+                  <div style={{background:'rgba(255,100,100,0.08)', borderLeft:'3px solid var(--accent2)', padding:'6px 10px', borderRadius:4}}>
+                    <div style={{fontSize:10, color:'var(--accent2)', fontWeight:600, marginBottom:4}}>
+                      📥 ИЗ ИСТОЧНИКА {c.source_file}
+                    </div>
+                    <div style={{fontSize:11, color:'var(--text-dim)', lineHeight:1.5, whiteSpace:'pre-wrap'}}>
+                      {c.context_b}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {c.status === 'OPEN' && (
               <>
@@ -747,17 +788,17 @@ function ConflictsPanel() {
                   </div>
                 )}
                 <textarea className="conflict-comment-input" rows={2}
-                  placeholder="Your comment or instruction (required for skill extraction)…"
+                  placeholder="Ваш комментарий или указание (обязательно для извлечения навыка)…"
                   value={comments[c.id] || ''}
                   onChange={e => setComments(cm => ({...cm, [c.id]: e.target.value}))} />
                 <button className="btn-resolve"
                   disabled={!selections[c.id] || resolving[c.id]}
                   onClick={() => resolve(c.id)}>
-                  {resolving[c.id] ? 'Resolving…' : '✓ Resolve & Extract Skill'}
+                  {resolving[c.id] ? 'Решение…' : '✓ Решить и извлечь навык'}
                 </button>
                 <button className="btn-comment"
                   onClick={() => addComment(c.id)}>
-                  + Add Comment (keep open)
+                  + Добавить комментарий (оставить открытым)
                 </button>
               </>
             )}
@@ -766,7 +807,7 @@ function ConflictsPanel() {
                 ✓ {c.resolution}
                 {c.skill_extracted && (
                   <div style={{color:'var(--text-dim)', marginTop:3}}>
-                    Skill: {c.skill_extracted}
+                    Навык: {c.skill_extracted}
                   </div>
                 )}
               </div>
@@ -801,25 +842,27 @@ function DraftsPanel() {
     try {
       const r = await api.post(`/ingest/drafts/${id}/apply`);
       if (r.status === 'applied') {
-        toast.success(`Applied: ${r.pages.join(', ')}`);
+        toast.success(`Применено: ${r.pages.join(', ')}`);
         loadDrafts();
       }
-    } catch(e) { toast.error('Apply failed'); }
+    } catch(e) {
+      toast.error(`Ошибка применения: ${e.message || 'неизвестная ошибка'}`);
+    }
   };
 
   const handleReject = async (id) => {
     try {
       await api.post(`/ingest/drafts/${id}/reject`);
-      toast.success('Draft rejected');
+      toast.success('Черновик отклонён');
       loadDrafts();
-    } catch { toast.error('Reject failed'); }
+    } catch { toast.error('Ошибка отклонения'); }
   };
 
-  if (loading) return <div className="panel-hint">Loading drafts...</div>;
+  if (loading) return <div className="panel-hint">Загрузка черновиков...</div>;
 
   return (
     <div className="conflicts-panel">
-      {drafts.length === 0 && <div className="panel-hint">No pending drafts.</div>}
+      {drafts.length === 0 && <div className="panel-hint">Нет ожидающих черновиков.</div>}
       {drafts.map(d => (
         <div key={d.id} className="conflict-card" style={{marginBottom:8}}>
           <div style={{fontWeight:600, marginBottom:4}}>{d.id}</div>
@@ -837,10 +880,10 @@ function DraftsPanel() {
           <div style={{display:'flex', gap:6}}>
             <button className="header-btn" onClick={() => handleApply(d.id)}
                     style={{color:'var(--green)', borderColor:'var(--green)'}}>
-              Apply
+              Применить
             </button>
             <button className="header-btn danger" onClick={() => handleReject(d.id)}>
-              Reject
+              Отклонить
             </button>
           </div>
         </div>
@@ -852,7 +895,7 @@ function DraftsPanel() {
 // ─────────────────────────────────────────────
 // Wiki Tree + Page Viewer (Right Panel)
 // ─────────────────────────────────────────────
-function WikiPanel({ highlightedSlug, onPageOpen }) {
+function WikiPanel({ highlightedSlug, onPageOpen, refreshKey }) {
   const [tree, setTree] = useState({ projects: {}, total_pages: 0, open_conflicts: 0 });
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState(null);
@@ -864,7 +907,7 @@ function WikiPanel({ highlightedSlug, onPageOpen }) {
   const loadTree = async () => {
     try { setTree(await api.get('/wiki/tree')); } catch {}
   };
-  useEffect(() => { loadTree(); }, []);
+  useEffect(() => { loadTree(); }, [refreshKey]);
 
   // Open highlighted slug from chat citation
   useEffect(() => {
@@ -874,8 +917,10 @@ function WikiPanel({ highlightedSlug, onPageOpen }) {
   // Hash routing: #wiki/project/page → openPage
   useEffect(() => {
     const onHash = () => {
-      const hash = window.location.hash.replace(/^#wiki\//, '');
-      if (hash && hash !== window.location.hash) openPage(hash);
+      const hash = window.location.hash;
+      if (!hash.startsWith('#wiki/')) return;
+      const slug = hash.slice(6); // remove '#wiki/'
+      if (slug) openPage(slug);
     };
     window.addEventListener('hashchange', onHash);
     // Handle existing hash on mount
@@ -883,25 +928,37 @@ function WikiPanel({ highlightedSlug, onPageOpen }) {
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
-  const openPage = async (slug) => {
-    setActivePage(slug);
+  // When wiki is rebuilt (refreshKey changes), clear the stale open page.
+  // Skip on initial mount (refreshKey=0) to allow hash routing to work.
+  const rebuildCount = React.useRef(0);
+  useEffect(() => {
+    if (rebuildCount.current === 0) { rebuildCount.current++; return; }
+    rebuildCount.current++;
+    setPageData(null);
+    setActivePage(null);
     setPageNotFound(null);
+    if (window.location.hash.startsWith('#wiki/')) {
+      history.replaceState(null, '', window.location.pathname);
+    }
+  }, [refreshKey]);
+
+  const openPage = async (slug) => {
+    // Strip anchor from slug before API call; keep full slug for hash
+    const cleanSlug = slug.split('#')[0];
+    setActivePage(cleanSlug);
+    setPageNotFound(null);
+    const targetHash = `#wiki/${slug}`;
+    if (window.location.hash !== targetHash) {
+      window.location.hash = targetHash;
+    }
     try {
-      const data = await api.get(`/wiki/page/${slug}`);
-      // Post-process: convert any remaining [[slug]] to clickable links
-      if (data.content_html) {
-        data.content_html = data.content_html.replace(
-          /\[\[([^\]|#]+)(?:\|([^\]]+))?\]\]/g,
-          (_, s, label) => {
-            const display = label || s.split('/').pop().replace(/-/g, ' ');
-            return `<a href="#wiki/${s}" class="wikilink">${display}</a>`;
-          }
-        );
-      }
+      const data = await api.get(`/wiki/page/${cleanSlug}`);
       setPageData(data);
     } catch(e) {
       setPageData(null);
-      setPageNotFound(slug);
+      setPageNotFound(cleanSlug);
+      // Clear the broken hash so next reload doesn't repeat the 404
+      history.replaceState(null, '', window.location.pathname);
     }
   };
 
@@ -925,7 +982,7 @@ function WikiPanel({ highlightedSlug, onPageOpen }) {
     if (items) return (
       <div className="wiki-tree">
         {items.length === 0 && (
-          <div style={{padding:12, color:'var(--text-dim)', fontSize:12}}>No results</div>
+          <div style={{padding:12, color:'var(--text-dim)', fontSize:12}}>Нет результатов</div>
         )}
         {items.map(item => (
           <div key={item.slug}
@@ -959,7 +1016,7 @@ function WikiPanel({ highlightedSlug, onPageOpen }) {
         ))}
         {Object.keys(tree.projects).length === 0 && (
           <div style={{padding:16, color:'var(--text-dim)', fontSize:12, textAlign:'center'}}>
-            Wiki is empty. Upload documents to get started.
+            Wiki пусто. Загрузите документы для начала работы.
           </div>
         )}
       </div>
@@ -973,11 +1030,11 @@ function WikiPanel({ highlightedSlug, onPageOpen }) {
           Wiki ({tree.total_pages})
         </div>
         <div className={`tab ${tab==='conflicts'?'active':''}`} onClick={()=>setTab('conflicts')}>
-          Conflicts
+          Конфликты
           {tree.open_conflicts > 0 && <span className="badge">{tree.open_conflicts}</span>}
         </div>
         <div className={`tab ${tab==='drafts'?'active':''}`} onClick={()=>setTab('drafts')}>
-          Drafts
+          Черновики
           <span id="draft-badge" className="badge" style={{display:'none'}}>0</span>
         </div>
       </div>
@@ -987,7 +1044,7 @@ function WikiPanel({ highlightedSlug, onPageOpen }) {
 
       {tab === 'wiki' && (
         <>
-          <input className="wiki-search-input" placeholder="🔍 Search wiki…"
+          <input className="wiki-search-input" placeholder="🔍 Поиск по wiki…"
                  value={search} onChange={e => handleSearch(e.target.value)} />
           <div style={{flex: pageData ? '0 0 40%' : '1', overflowY:'auto',
                         borderBottom: pageData ? '1px solid var(--border)' : 'none'}}>
@@ -997,8 +1054,8 @@ function WikiPanel({ highlightedSlug, onPageOpen }) {
           {pageData && (
             <div className="page-viewer" style={{flex:1}}>
               {pageData.superseded_by && (
-                <div className="superseded-banner">
-                  ⚠️ Superseded by{' '}
+                  <div className="superseded-banner">
+                    ⚠️ Заменено на{' '}
                   <span className="wikilink" onClick={() => openPage(pageData.superseded_by)}>
                     [[{pageData.superseded_by}]]
                   </span>
@@ -1009,7 +1066,7 @@ function WikiPanel({ highlightedSlug, onPageOpen }) {
                 <span className="page-tag">{pageData.project}</span>
                 <span className="page-tag">{pageData.page_type}</span>
                 <span className={`page-tag ${confClass(pageData.confidence)}`}>
-                  conf: {Math.round(pageData.confidence*100)}%
+                  уверенность: {Math.round(pageData.confidence*100)}%
                 </span>
                 {pageData.tags.map(t => (
                   <span key={t} className="page-tag">{t}</span>
@@ -1020,20 +1077,22 @@ function WikiPanel({ highlightedSlug, onPageOpen }) {
               )}
               {(pageData.needs_review || pageData.source_coverage || pageData.wikilinks?.length > 0) && (
                 <div className="page-meta" style={{marginBottom:8}}>
-                  {pageData.needs_review && <span className="page-tag" style={{color:'var(--red)', borderColor:'var(--red)'}}>needs review</span>}
-                  {pageData.source_coverage && <span className="page-tag">{pageData.source_coverage} coverage</span>}
-                  {pageData.wikilinks?.length > 0 && <span className="page-tag">{pageData.wikilinks.length} → links</span>}
+                  {pageData.needs_review && <span className="page-tag" style={{color:'var(--red)', borderColor:'var(--red)'}}>требует проверки</span>}
+                  {pageData.source_coverage && <span className="page-tag">{pageData.source_coverage} покрытие</span>}
+                  {pageData.wikilinks?.length > 0 && <span className="page-tag">{pageData.wikilinks.length} → ссылок</span>}
                 </div>
               )}
               <div className="page-content"
                    dangerouslySetInnerHTML={{ __html: pageData.content_html }}
                    onClick={e => {
-                     const a = e.target.closest('a.wikilink');
+                     const target = e.target;
+                     const base = target instanceof Element ? target : target.parentElement;
+                     const a = base ? base.closest('a.wikilink') : null;
                      if (a) {
                        e.preventDefault();
                        const href = a.getAttribute('href') || '';
-                       const slug = href.replace('#wiki/', '');
-                       if (slug) openPage(slug);
+                       const targetSlug = href.replace('#wiki/', '');
+                       if (targetSlug) openPage(targetSlug);
                      }
                    }} />
             </div>
@@ -1043,9 +1102,9 @@ function WikiPanel({ highlightedSlug, onPageOpen }) {
             <div className="page-viewer" style={{flex:1, display:'flex', flexDirection:'column',
               alignItems:'center', justifyContent:'center', gap:12, color:'var(--text-dim)'}}>
               <div style={{fontSize:32}}>📄</div>
-              <div style={{fontSize:14, color:'var(--text)'}}>Page not found</div>
+              <div style={{fontSize:14, color:'var(--text)'}}>Страница не найдена</div>
               <div style={{fontSize:12}}>{pageNotFound}</div>
-              <div style={{fontSize:12}}>This page is referenced by a [[wikilink]] but hasn't been created yet.</div>
+              <div style={{fontSize:12}}>Эта страница указана в [[wikilink]], но ещё не создана.</div>
             </div>
           )}
 
@@ -1053,9 +1112,9 @@ function WikiPanel({ highlightedSlug, onPageOpen }) {
             <div className="page-viewer" style={{flex:1, display:'flex', flexDirection:'column',
               alignItems:'center', justifyContent:'center', gap:12, color:'var(--text-dim)'}}>
               <div style={{fontSize:32}}>📄</div>
-              <div style={{fontSize:14, color:'var(--text)'}}>Page not found</div>
+              <div style={{fontSize:14, color:'var(--text)'}}>Страница не найдена</div>
               <div style={{fontSize:12}}>{pageNotFound}</div>
-              <div style={{fontSize:12}}>This page is referenced by a [[wikilink]] but hasn't been created yet.</div>
+              <div style={{fontSize:12}}>Эта страница указана в [[wikilink]], но ещё не создана.</div>
             </div>
           )}
 
@@ -1063,9 +1122,9 @@ function WikiPanel({ highlightedSlug, onPageOpen }) {
             <div className="page-viewer" style={{flex:1, display:'flex', flexDirection:'column',
               alignItems:'center', justifyContent:'center', gap:12, color:'var(--text-dim)'}}>
               <div style={{fontSize:32}}>📄</div>
-              <div style={{fontSize:14, color:'var(--text)'}}>Page not found</div>
+              <div style={{fontSize:14, color:'var(--text)'}}>Страница не найдена</div>
               <div style={{fontSize:12}}>{pageNotFound}</div>
-              <div style={{fontSize:12}}>This page is referenced by a [[wikilink]] but hasn't been created yet.</div>
+              <div style={{fontSize:12}}>Эта страница указана в [[wikilink]], но ещё не создана.</div>
             </div>
           )}
         </>
@@ -1082,12 +1141,12 @@ function Message({ msg, onSlugClick }) {
   const renderContent = (text) => {
     const parts = text.split(/(\[\[[^\]]+\]\])/g);
     return parts.map((part, i) => {
-      const m = part.match(/^\[\[([^\]|#]+)(?:[|#]([^\]]+))?\]\]$/);
+      const m = part.match(/^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/);
       if (m) {
-        const slug = m[1].trim();
-        const label = m[2] || slug.split('/').pop().replace(/-/g, ' ');
+        const fullSlug = m[1].trim();
+        const label = m[2] || fullSlug.split('#')[0].split('/').pop().replace(/-/g, ' ');
         return (
-          <span key={i} className="wikilink" onClick={() => onSlugClick(slug)}>
+          <span key={i} className="wikilink" onClick={() => onSlugClick(fullSlug)}>
             [[{label}]]
           </span>
         );
@@ -1097,6 +1156,7 @@ function Message({ msg, onSlugClick }) {
         __html: part
           .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
           .replace(/`([^`]+)`/g, '<code>$1</code>')
+          .replace(/\^\[raw\/([^\]]+)\]/g, '<sup class="provenance"><a href="/api/wiki/raw/$1" title="Source: $1">^[$1]</a></sup>')
           .replace(/\n/g, '<br/>')
       }} />;
     });
@@ -1134,6 +1194,9 @@ function App() {
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const refreshWiki = useCallback(() => setRefreshKey(k => k + 1), []);
 
   // Chat input
   const [input, setInput] = useState('');
@@ -1251,14 +1314,14 @@ function App() {
               setMessages(m => m.map(x => x._streaming
                 ? { ...x, content: fullAnswer, cited_slugs: cited, _streaming: false } : x));
             } else if (ev.type === 'error') {
-              toast(`Error: ${ev.message}`, 'error');
+              toast(`Ошибка: ${ev.message}`, 'error');
             }
           } catch {}
         }
       }
     } catch(e) {
       setMessages(m => m.filter(x => !x._typing && !x._streaming));
-      toast(`Send failed: ${e.message}`, 'error');
+      toast(`Ошибка отправки: ${e.message}`, 'error');
     } finally {
       setIsStreaming(false);
       loadSessions();
@@ -1276,7 +1339,7 @@ function App() {
       const res = await api.post(`/chat/sessions/${activeSessionId}/crystallize`, {});
       toast(res.message, res.slug ? 'success' : 'info');
       if (res.slug) setHighlightedSlug(res.slug);
-    } catch(e) { toast(`Failed: ${e.message}`, 'error'); }
+    } catch(e) { toast(`Ошибка: ${e.message}`, 'error'); }
   };
 
   // ── Slug click handler ───────────────────────
@@ -1291,23 +1354,23 @@ function App() {
     <div id="root" style={{display:'flex', flexDirection:'column', height:'100vh'}}>
       {/* Header */}
       <div className="header">
-        <button className="icon-btn" onClick={() => setLeftOpen(o => !o)} title="Toggle history">
+        <button className="icon-btn" onClick={() => setLeftOpen(o => !o)} title="Переключить историю">
           {leftOpen ? '◀' : '▶'}
         </button>
-        <h1>🧠 Wiki Engine</h1>
+        <h1>🧠 Wiki Движок</h1>
         <div className="spacer" />
         {activeSessionId && messages.length >= 6 && (
-          <button className="header-btn" onClick={crystallize} title="Save session as wiki page">
-            💎 Crystallize
+          <button className="header-btn" onClick={crystallize} title="Сохранить сессию как wiki-страницу">
+            💎 Кристаллизовать
           </button>
         )}
         <button className="header-btn" onClick={() => setShowUpload(true)}>
-          📂 Upload
+          📂 Загрузить
         </button>
         <button className="header-btn danger" onClick={() => setShowRebuild(true)}>
-          🔄 Rebuild
+          🔄 Перестроить
         </button>
-        <button className="icon-btn" onClick={() => setRightOpen(o => !o)} title="Toggle wiki">
+        <button className="icon-btn" onClick={() => setRightOpen(o => !o)} title="Переключить wiki">
           {rightOpen ? '▶' : '◀'}
         </button>
       </div>
@@ -1315,12 +1378,12 @@ function App() {
       <div className="main-area">
         {/* Left Panel — session history */}
         <div className="panel" style={{ width: leftOpen ? `${280}px` : '0' }}>
-          <div className="panel-header"><span>💬 History</span></div>
-          <button className="btn-new-session" onClick={newSession}>+ New Chat</button>
+          <div className="panel-header"><span>💬 История</span></div>
+          <button className="btn-new-session" onClick={newSession}>+ Новый чат</button>
           <div className="panel-body">
             {sessions.length === 0 && (
               <div style={{padding:'16px', fontSize:12, color:'var(--text-dim)', textAlign:'center'}}>
-                No sessions yet
+                Пока нет сессий
               </div>
             )}
             {sessions.map(s => (
@@ -1328,11 +1391,11 @@ function App() {
                 className={`session-item ${activeSessionId===s.session_id?'active':''}`}
                 onClick={() => loadSession(s.session_id)}>
                 <div className="s-title">
-                  {s.last_question || 'New session'}
+                  {s.last_question || 'Новая сессия'}
                 </div>
                 <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
                   <span className="s-meta">
-                    {s.message_count} msgs
+                    {s.message_count} сообщ.
                     {s.project_filter && ` · ${s.project_filter}`}
                   </span>
                   <span className="icon-btn"
@@ -1351,13 +1414,13 @@ function App() {
                           justifyContent:'center', flexDirection:'column', gap:12,
                           color:'var(--text-dim)'}}>
               <div style={{fontSize:40}}>🧠</div>
-              <div style={{fontSize:16, color:'var(--text)'}}>Wiki Engine</div>
-              <div style={{fontSize:13}}>Upload documents and ask questions</div>
+              <div style={{fontSize:16, color:'var(--text)'}}>Wiki Движок</div>
+              <div style={{fontSize:13}}>Загрузите документы и задайте вопрос</div>
               <div style={{display:'flex', gap:8, flexWrap:'wrap', justifyContent:'center',
                             maxWidth:400, marginTop:8}}>
-                {['What does this project use for caching?',
-                  'Compare deployment approaches across projects',
-                  'Show me all authentication-related pages'].map(hint => (
+                {['Что использует этот проект для кеширования?',
+                  'Сравни подходы к развёртыванию между проектами',
+                  'Покажи все страницы про аутентификацию'].map(hint => (
                   <div key={hint}
                     style={{background:'var(--surface2)', border:'1px solid var(--border)',
                              borderRadius:8, padding:'6px 12px', fontSize:12,
@@ -1388,7 +1451,7 @@ function App() {
             <div className="input-wrap">
               <textarea ref={textareaRef}
                 className="chat-input" rows={1}
-                placeholder="Ask anything about your wiki… (Enter to send, Shift+Enter for newline)"
+                placeholder="Спросите что-нибудь о вашей wiki… (Enter для отправки, Shift+Enter для новой строки)"
                 value={input}
                 onChange={e => {
                   setInput(e.target.value);
@@ -1400,10 +1463,10 @@ function App() {
               />
               <span className="project-badge"
                     onClick={() => {
-                      const p = prompt('Filter by project (empty = all):', projectFilter || '');
+                      const p = prompt('Фильтр по проекту (пусто = все):', projectFilter || '');
                       if (p !== null) setProjectFilter(p || null);
                     }}>
-                {projectFilter || 'all projects'}
+                {projectFilter || 'все проекты'}
               </span>
             </div>
             <button className="send-btn" onClick={send} disabled={isStreaming || !input.trim()}>
@@ -1417,6 +1480,7 @@ function App() {
           <WikiPanel
             highlightedSlug={highlightedSlug}
             onPageOpen={setHighlightedSlug}
+            refreshKey={refreshKey}
           />
         </div>
       </div>
@@ -1425,10 +1489,10 @@ function App() {
       {showUpload && (
         <UploadModal
           onClose={() => setShowUpload(false)}
-          onDone={() => {}}
+          onDone={refreshWiki}
         />
       )}
-      {showRebuild && <RebuildModal onClose={() => setShowRebuild(false)} />}
+      {showRebuild && <RebuildModal onClose={() => setShowRebuild(false)} onRefresh={refreshWiki} />}
     </div>
   );
 }

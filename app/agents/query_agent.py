@@ -299,8 +299,13 @@ class QueryAgent:
             elif action == "execute_code":
                 code = inp.get("code", "")
                 reasoning = inp.get("reasoning", "")
+                if not self.settings.query.allow_code_execution:
+                    scratchpad.append(
+                        f"[iter {iteration+1}] execute_code denied (disabled by settings)"
+                    )
+                    continue
                 output = self.interpreter.execute(code)
-                result_str = json.dumps(output, ensure_ascii=False)[:800]
+                result_str = json.dumps(output.to_dict(), ensure_ascii=False)[:800]
                 scratchpad.append(
                     f"[iter {iteration+1}] execute_code ({reasoning}) → {result_str}"
                 )

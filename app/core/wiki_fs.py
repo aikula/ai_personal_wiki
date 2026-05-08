@@ -25,7 +25,13 @@ from pathlib import Path
 import frontmatter  # python-frontmatter
 
 from app.config import Settings
-from app.core.utils import extract_wikilinks, heading_to_anchor
+from app.core.utils import (
+    extract_wikilinks,
+    heading_to_anchor,
+    validate_project_name,
+    validate_raw_filename,
+    validate_slug,
+)
 
 logger = logging.getLogger("wiki.fs")
 
@@ -72,7 +78,7 @@ PROJECT_TYPES = frozenset()
 def _validate_frontmatter(meta: dict) -> None:
     missing = REQUIRED_FRONTMATTER - set(meta.keys())
     if missing:
-        raise FrontmatterError(f"Missing required frontmatter fields: {missing}")
+        raise FrontmatterError(f"Отсутствуют обязательные поля frontmatter: {missing}")
 
 
 @dataclass
@@ -130,9 +136,10 @@ class ConflictEntry:
     conflict_type: str         # "factual_contradiction" | "version_mismatch" | ...
     page_a_slug: str
     page_b_ref: str
-    context_a: str             # first 300 chars of wiki page
-    context_b: str             # first 300 chars of source
+    context_a: str             # relevant excerpt from wiki page (up to 600 chars)
+    context_b: str             # relevant excerpt from source document (up to 600 chars)
     suggested_options: list[str]
+    description: str = ""      # 1-2 sentence LLM summary of what exactly contradicts
     user_comment: str = ""
     resolution: str = "pending"
     skill_extracted: str = ""
@@ -426,7 +433,11 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         path = self._slug_to_path(slug)
 
         if not allow_overwrite and path.exists():
-            raise SlugConflictError(f"Page already exists: {slug}")
+            raise SlugConflictError(f"Страница уже существует: {slug}")
+
+        # Auto-fill nullable required fields that LLM may omit
+        meta.setdefault("supersedes", None)
+        meta.setdefault("superseded_by", None)
 
         _validate_frontmatter(meta)
 
@@ -467,7 +478,7 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         """
         old = self.read_page(old_slug)
         if old is None:
-            raise WikiFSError(f"Cannot supersede non-existent page: {old_slug}")
+            raise WikiFSError(f"Невозможно заменить несуществующую страницу: {old_slug}")
         meta = dict(old.meta)
         meta["superseded_by"] = new_slug
         self.write_page(old_slug, meta=meta, content=old.content)
@@ -480,6 +491,7 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         project=None returns all; project="_general" returns raw/_general/*.md
         """
         if project:
+            validate_project_name(project)
             target = self.raw_dir / project
             if not target.exists():
                 return []
@@ -492,15 +504,19 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         e.g. "myapp/deploy_guide.md"
         Returns None if not found.
         """
-        path = self.raw_dir / relative_path
+        if not relative_path:
+            raise ValueError("relative_path не может быть пустым")
+        path = self._resolve_in_dir(self.raw_dir, relative_path)
         if not path.exists():
             return None
         return path.read_text(encoding="utf-8")
 
     def save_raw_file(self, project: str, filename: str, content: str) -> Path:
+        validate_project_name(project)
+        validate_raw_filename(filename)
         target_dir = self.raw_dir / project
         target_dir.mkdir(parents=True, exist_ok=True)
-        target = target_dir / filename
+        target = self._resolve_in_dir(target_dir, filename)
         target.write_text(content, encoding="utf-8")
         logger.info("Raw file saved: path=%s/%s chars=%d", project, filename, len(content))
         self.update_source_manifest(f"{project}/{filename}", content)
@@ -658,6 +674,34 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
     def count_open_conflicts(self) -> int:
         content = self.read_conflicts_raw()
         return content.count("## [OPEN]")
+
+    def clear_open_conflicts(self) -> int:
+        """Remove all OPEN conflicts and keep RESOLVED history."""
+        path = self.root / "conflicts.md"
+        content = self.read_conflicts_raw()
+        parts = re.split(r"\n---\n", content)
+
+        removed = 0
+        kept: list[str] = []
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+            if "## [OPEN]" in part:
+                removed += 1
+                continue
+            kept.append(part)
+
+        if removed == 0:
+            return 0
+
+        if not kept:
+            new_content = "# Conflicts\n\n_No conflicts recorded yet._\n"
+        else:
+            new_content = "\n\n---\n\n".join(kept) + "\n"
+        path.write_text(new_content, encoding="utf-8")
+        logger.info("Cleared %d OPEN conflicts before rebuild", removed)
+        return removed
 
     # ── Skills operations ────────────────────────────────────────
 
@@ -870,9 +914,10 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         Returns list of applied slugs. Removes draft on success."""
         draft = self.read_draft(draft_id)
         if draft is None:
-            raise WikiFSError(f"Draft not found: {draft_id}")
+            raise WikiFSError(f"Черновик не найден: {draft_id}")
 
         applied = []
+        errors: list[str] = []
         for page in draft["pages"]:
             # Parse frontmatter + content from the candidate markdown
             try:
@@ -880,19 +925,30 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
                 meta = dict(post.metadata)
                 content = post.content
             except Exception as exc:
-                logger.warning("Draft apply parse error: slug=%s error=%s",
-                               page["slug"], exc)
+                msg = f"{page['slug']}: parse error ({exc})"
+                errors.append(msg)
+                logger.warning("Draft apply parse error: %s", msg)
                 continue
 
-            self.write_page(
-                slug=page["slug"],
-                meta=meta,
-                content=content,
-                allow_overwrite=True,
-            )
-            applied.append(page["slug"])
+            try:
+                self.write_page(
+                    slug=page["slug"],
+                    meta=meta,
+                    content=content,
+                    allow_overwrite=True,
+                )
+                applied.append(page["slug"])
+            except Exception as exc:
+                msg = f"{page['slug']}: write error ({exc})"
+                errors.append(msg)
+                logger.warning("Draft apply write error: %s", msg)
 
-        # Remove draft directory
+        if errors:
+            raise WikiFSError("Применение черновика завершено с ошибками: " + "; ".join(errors))
+        if not applied:
+            raise WikiFSError("Применение черновика: нет валидных страниц для применения")
+
+        # Remove draft directory only after successful apply
         import shutil
         shutil.rmtree(self.drafts_dir / draft_id)
         logger.info("Draft applied: id=%s pages=%s", draft_id, applied)
@@ -918,6 +974,18 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         self._bootstrap_index()
         (self.wiki_dir / "log.md").write_text("# Change Log\n\n", encoding="utf-8")
         logger.info("Wiki directory re-bootstrapped: %s", self.wiki_dir)
+
+    def clear_all_drafts(self) -> int:
+        """Remove all pending drafts. Called before rebuild to avoid stale drafts."""
+        if not self.drafts_dir.exists():
+            return 0
+        removed = 0
+        for d in self.drafts_dir.iterdir():
+            if d.is_dir():
+                shutil.rmtree(d)
+                removed += 1
+        logger.info("Cleared %d stale drafts before rebuild", removed)
+        return removed
 
     def defer_index(self) -> None:
         """Suppress index updates for batch operations (avoids O(N²))."""
@@ -1073,7 +1141,17 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
     # ── Internal helpers ─────────────────────────────────────────
 
     def _slug_to_path(self, slug: str) -> Path:
-        return self.wiki_dir / f"{slug}.md"
+        validate_slug(slug)
+        return self._resolve_in_dir(self.wiki_dir, f"{slug}.md")
+
+    @staticmethod
+    def _resolve_in_dir(base_dir: Path, relative_path: str) -> Path:
+        """Resolve path and ensure it stays inside base_dir."""
+        base = base_dir.resolve()
+        target = (base / relative_path).resolve()
+        if not target.is_relative_to(base):
+            raise ValueError(f"Путь выходит за пределы базовой директории: {relative_path!r}")
+        return target
 
     def _parse_page(self, path: Path, slug: str) -> WikiPage | None:
         try:
@@ -1186,16 +1264,23 @@ def _render_conflict_block(entry: ConflictEntry) -> str:
         f"  {i+1}. {opt}"
         for i, opt in enumerate(entry.suggested_options)
     )
+    description_line = (
+        f"- **Description:** {entry.description}\n"
+        if entry.description else ""
+    )
     return (
         f"## [{entry.status}] {entry.id}\n\n"
         f"- **Date:** {entry.date}\n"
         f"- **Project:** {entry.project}\n"
         f"- **Source file:** {entry.source_file}\n"
         f"- **Conflict type:** {entry.conflict_type}\n"
-        f"- **Page A:** [[{entry.page_a_slug}]]\n"
-        f"- **Page B:** {entry.page_b_ref}\n"
-        f"- **Context A:** {entry.context_a}\n"
-        f"- **Context B:** {entry.context_b}\n"
+        f"- **Page A (wiki):** [[{entry.page_a_slug}]]\n"
+        f"- **Page B (source):** {entry.page_b_ref}\n"
+        f"{description_line}"
+        f"- **Context A (wiki excerpt):**\n\n"
+        f"  > {entry.context_a.replace(chr(10), chr(10) + '  > ')}\n\n"
+        f"- **Context B (source excerpt):**\n\n"
+        f"  > {entry.context_b.replace(chr(10), chr(10) + '  > ')}\n\n"
         f"- **Suggested options:**\n{options_text}\n"
         f"- **User comment:** {entry.user_comment or '_none_'}\n"
         f"- **Resolution:** {entry.resolution}\n"

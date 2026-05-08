@@ -34,6 +34,7 @@ class DetectedConflict:
     context_existing: str
     context_source: str
     suggested_options: list[str]
+    description: str = ""       # 1-2 sentence summary of what exactly conflicts
     is_cross_project: bool = False
 
 

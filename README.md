@@ -251,6 +251,7 @@ ingest:
 query:
   context_budget_chars: 21000
   max_wiki_pages_in_context: 6
+  allow_code_execution: false
 ```
 
 Environment variables always take priority over `settings.yaml`:

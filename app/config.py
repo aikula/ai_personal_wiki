@@ -20,12 +20,16 @@ logger = logging.getLogger("wiki")
 
 def setup_logging(level: str = "INFO") -> None:
     """Configure root wiki logger. Call once at startup."""
+    root = logging.getLogger("wiki")
+    if root.handlers:
+        root.setLevel(getattr(logging, level.upper(), logging.INFO))
+        return
+
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter(
         "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     ))
-    root = logging.getLogger("wiki")
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
     root.addHandler(handler)
 
@@ -64,6 +68,7 @@ class QuerySettings:
     context_budget_chars: int = 21_000
     max_wiki_pages_in_context: int = 6
     history_budget_chars: int = 7_000
+    allow_code_execution: bool = False
 
 
 @dataclass
@@ -75,6 +80,7 @@ class AuditSettings:
 
 @dataclass
 class Settings:
+    language: str = "ru"
     llm: LLMSettings = field(default_factory=LLMSettings)
     limits: LimitsSettings = field(default_factory=LimitsSettings)
     ingest: IngestSettings = field(default_factory=IngestSettings)
@@ -92,6 +98,9 @@ class Settings:
             _apply_dict(settings, data)
 
         # Env vars override yaml
+        lang = os.environ.get("LANGUAGE", "")
+        if lang:
+            settings.language = lang
         api_key = os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
         if api_key:
             settings.llm.api_key = api_key
@@ -118,7 +127,9 @@ def _apply_dict(settings: Settings, data: dict) -> None:
         "audit": settings.audit,
     }
     for key, value in data.items():
-        if key == "wiki_data_path":
+        if key == "language":
+            settings.language = value
+        elif key == "wiki_data_path":
             settings.wiki_data_path = value
         elif key in section_map and isinstance(value, dict):
             section = section_map[key]

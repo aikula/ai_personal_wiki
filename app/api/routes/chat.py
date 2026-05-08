@@ -143,7 +143,7 @@ async def get_session(
 ):
     """Get full message history for a session."""
     if session_id not in store:
-        raise HTTPException(404, f"Session {session_id!r} not found")
+        raise HTTPException(404, f"Сессия {session_id!r} не найдена")
     session = store[session_id]
     return ChatHistoryResponse(
         session_id=session_id,
@@ -166,7 +166,7 @@ async def delete_session(
 ):
     """Delete a chat session from memory."""
     if session_id not in store:
-        raise HTTPException(404, "Session not found")
+        raise HTTPException(404, "Сессия не найдена")
     del store[session_id]
     return {"deleted": session_id}
 
@@ -184,16 +184,16 @@ async def crystallize_session(
     Returns slug of created page.
     """
     if session_id not in store:
-        raise HTTPException(404, "Session not found")
+        raise HTTPException(404, "Сессия не найдена")
     session = store[session_id]
 
     slug = await asyncio.to_thread(agent.crystallize_session, session)
     if slug:
         return CrystallizeResponse(
             slug=slug,
-            message=f"Session crystallized to [[{slug}]]",
+            message=f"Сессия кристаллизована в [[{slug}]]",
         )
     return CrystallizeResponse(
         slug=None,
-        message="Session too short to crystallize (need >= 3 exchanges)",
+        message="Сессия слишком короткая для кристаллизации (нужно >= 3 обмена)",
     )

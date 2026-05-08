@@ -76,15 +76,15 @@ class TestValidateSlug:
         validate_slug("myapp/v2")
 
     def test_empty_raises(self):
-        with pytest.raises(ValueError, match="empty"):
+        with pytest.raises(ValueError, match="пустым"):
             validate_slug("")
 
     def test_leading_slash_raises(self):
-        with pytest.raises(ValueError, match="start with /"):
+        with pytest.raises(ValueError, match="начинаться"):
             validate_slug("/myapp/page")
 
     def test_trailing_slash_raises(self):
-        with pytest.raises(ValueError, match="end with /"):
+        with pytest.raises(ValueError, match="заканчиваться"):
             validate_slug("myapp/page/")
 
     def test_dotdot_raises(self):
@@ -92,15 +92,15 @@ class TestValidateSlug:
             validate_slug("myapp/../etc")
 
     def test_backslash_raises(self):
-        with pytest.raises(ValueError, match="backslash"):
+        with pytest.raises(ValueError, match="косую"):
             validate_slug("myapp\\page")
 
     def test_uppercase_raises(self):
-        with pytest.raises(ValueError, match="invalid characters"):
+        with pytest.raises(ValueError, match="недопустимые символы"):
             validate_slug("MyApp/Page")
 
     def test_spaces_raises(self):
-        with pytest.raises(ValueError, match="invalid characters"):
+        with pytest.raises(ValueError, match="недопустимые символы"):
             validate_slug("my app/page")
 
 

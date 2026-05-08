@@ -60,7 +60,7 @@ async def get_conflict(
     all_parsed = all_c + resolved
     match = next((c for c in all_parsed if c.id == conflict_id), None)
     if not match:
-        raise HTTPException(404, f"Conflict {conflict_id} not found")
+        raise HTTPException(404, f"Конфликт {conflict_id} не найден")
     return match
 
 
@@ -81,7 +81,7 @@ async def resolve_conflict(
     if f"## [OPEN] {conflict_id}" not in raw:
         raise HTTPException(
             404,
-            f"Conflict {conflict_id} not found or already resolved",
+            f"Конфликт {conflict_id} не найден или уже решён",
         )
 
     skill = ""
@@ -104,8 +104,8 @@ async def resolve_conflict(
         success=True,
         conflict_id=conflict_id,
         skill_extracted=skill,
-        message=f"Conflict {conflict_id} resolved."
-                + (" Skill added to skills.md." if skill else ""),
+        message=f"Конфликт {conflict_id} решён."
+                + (" Навык добавлен в skills.md." if skill else ""),
     )
 
 
@@ -122,7 +122,7 @@ async def add_comment(
     """
     raw = fs.read_conflicts_raw()
     if conflict_id not in raw:
-        raise HTTPException(404, f"Conflict {conflict_id} not found")
+        raise HTTPException(404, f"Конфликт {conflict_id} не найден")
 
     from datetime import datetime
     ts = datetime.now().isoformat(timespec="seconds")
@@ -186,10 +186,11 @@ def _parse_conflicts_md(raw: str) -> tuple[list[ConflictOut], list[ConflictOut]]
             project=extract("Project", block),
             source_file=extract("Source file", block),
             conflict_type=extract("Conflict type", block),
-            page_a_slug=_extract_slug(extract("Page A", block)),
-            page_b_ref=extract("Page B", block),
-            context_a=extract("Context A", block),
-            context_b=extract("Context B", block),
+            page_a_slug=_extract_slug(extract("Page A (wiki)", block) or extract("Page A", block)),
+            page_b_ref=extract("Page B (source)", block) or extract("Page B", block),
+            description=extract("Description", block, ""),
+            context_a=extract("Context A (wiki excerpt)", block) or extract("Context A", block),
+            context_b=extract("Context B (source excerpt)", block) or extract("Context B", block),
             suggested_options=extract_list("Suggested options", block),
             user_comment=extract("User comment", block, "_none_"),
             resolution=extract("Resolution", block, "pending"),

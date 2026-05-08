@@ -150,8 +150,9 @@ class ConflictOut(BaseModel):
     conflict_type: str
     page_a_slug: str
     page_b_ref: str
-    context_a: str
-    context_b: str
+    description: str = ""   # LLM summary of what exactly contradicts
+    context_a: str          # relevant excerpt from wiki page
+    context_b: str          # relevant excerpt from source document
     suggested_options: list[str]
     user_comment: str
     resolution: str
@@ -209,6 +210,7 @@ class AuditResponse(BaseModel):
 # ─────────────────────────────────────────────
 
 class SettingsResponse(BaseModel):
+    language: str
     llm_base_url: str
     llm_model: str
     wiki_data_path: str
@@ -219,6 +221,7 @@ class SettingsResponse(BaseModel):
 
 
 class UpdateSettingsRequest(BaseModel):
+    language: str | None = None
     llm_base_url: str | None = None
     llm_api_key: str | None = None
     llm_model: str | None = None

@@ -29,7 +29,7 @@ def parse_json_block(text: str) -> dict:
     if arr:
         return json.loads(arr.group(0))
 
-    raise ValueError(f"No valid JSON found in LLM response: {text[:200]!r}")
+    raise ValueError(f"Не удалось найти валидный JSON в ответе LLM: {text[:200]!r}")
 
 
 def extract_wikilinks(text: str) -> list[str]:
@@ -68,6 +68,7 @@ def heading_to_anchor(heading: str) -> str:
 # ═══════════════════════════════════════════════════════════════
 
 _SLUG_OK = re.compile(r"^[a-z0-9_/-]+$")
+_PROJECT_OK = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def validate_slug(slug: str) -> None:
@@ -84,23 +85,56 @@ def validate_slug(slug: str) -> None:
     Raises ``ValueError`` on first violation.
     """
     if not slug:
-        raise ValueError("Slug must not be empty")
+        raise ValueError("Slug не может быть пустым")
     if slug.startswith("/"):
-        raise ValueError("Slug must not start with /")
+        raise ValueError("Slug не должен начинаться с /")
     if slug.endswith("/"):
-        raise ValueError("Slug must not end with /")
+        raise ValueError("Slug не должен заканчиваться на /")
     if ".." in slug:
-        raise ValueError("Slug must not contain ..")
+        raise ValueError("Slug не должен содержать ..")
     if "\\" in slug:
-        raise ValueError("Slug must not contain backslash")
+        raise ValueError("Slug не должен содержать обратную косую черту")
     if not _SLUG_OK.fullmatch(slug):
         raise ValueError(
-            f"Slug {slug!r} contains invalid characters — "
-            f"only lowercase, digits, _, -, / allowed"
+            f"Slug {slug!r} содержит недопустимые символы — "
+            f"допустимы только строчные буквы, цифры, _, -, /"
         )
     for segment in slug.split("/"):
         if not segment:
-            raise ValueError(f"Slug {slug!r} contains empty segment")
+            raise ValueError(f"Slug {slug!r} содержит пустой сегмент")
+
+
+def validate_project_name(project: str) -> None:
+    """Validate project folder name used under raw/ and wiki/."""
+    if not project:
+        raise ValueError("Название проекта не может быть пустым")
+    if project in (".", ".."):
+        raise ValueError("Название проекта не должно быть . или ..")
+    if "/" in project or "\\" in project:
+        raise ValueError("Название проекта не должно содержать разделители пути")
+    if ":" in project:
+        raise ValueError("Название проекта не должно содержать ':'")
+    if not _PROJECT_OK.fullmatch(project):
+        raise ValueError(
+            f"Название проекта {project!r} содержит недопустимые символы — "
+            "допустимы только буквы, цифры, _, -"
+        )
+
+
+def validate_raw_filename(filename: str) -> None:
+    """Validate raw source filename (single basename, markdown only)."""
+    if not filename:
+        raise ValueError("Имя файла не может быть пустым")
+    if filename in (".", ".."):
+        raise ValueError("Имя файла не должно быть . или ..")
+    if "/" in filename or "\\" in filename:
+        raise ValueError("Имя файла не должно содержать разделители пути")
+    if ".." in filename:
+        raise ValueError("Имя файла не должно содержать '..'")
+    if ":" in filename:
+        raise ValueError("Имя файла не должно содержать ':'")
+    if not filename.lower().endswith(".md"):
+        raise ValueError("Допустимы только файлы с расширением .md")
 
 
 # ═══════════════════════════════════════════════════════════════

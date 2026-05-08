@@ -19,12 +19,21 @@ from app.api.models import SettingsResponse, UpdateSettingsRequest
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 
+@router.get("/language")
+async def get_language(
+    settings: Annotated[Settings, Depends(get_settings)],
+):
+    """Return only the UI language code — lightweight call for frontend init."""
+    return {"language": settings.language}
+
+
 @router.get("", response_model=SettingsResponse)
 async def get_current_settings(
     settings: Annotated[Settings, Depends(get_settings)],
 ):
     """Get current settings. API key is masked."""
     return SettingsResponse(
+        language=settings.language,
         llm_base_url=settings.llm.base_url,
         llm_model=settings.llm.model,
         wiki_data_path=settings.wiki_data_path,
@@ -53,8 +62,10 @@ async def update_settings(
         settings.llm.model = body.llm_model
     if body.temperature is not None:
         settings.llm.temperature = body.temperature
+    if body.language is not None:
+        settings.language = body.language
 
-    return {"success": True, "message": "Settings updated in memory"}
+    return {"success": True, "message": "Настройки обновлены в памяти"}
 
 
 @router.get("/test")

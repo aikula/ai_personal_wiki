@@ -89,10 +89,10 @@ class LintReport:
 
     def summary(self) -> str:
         if self.is_clean:
-            return f"✓ Wiki clean. {self.total_pages} pages checked."
+            return f"✓ Wiki проверена. Страниц: {self.total_pages}."
         return (
-            f"✗ {len(self.errors)} errors, {len(self.warnings)} warnings "
-            f"in {self.total_pages} pages."
+            f"✗ {len(self.errors)} ошибок, {len(self.warnings)} предупреждений "
+            f"в {self.total_pages} страницах."
         )
 
 
@@ -176,27 +176,27 @@ class WikiLinter:
                 issues.append(LintIssue(
                     slug=page.slug, line=0,
                     kind="missing_frontmatter",
-                    detail=f"Missing required field: '{field_name}'",
+                    detail=f"Отсутствует обязательное поле: '{field_name}'",
                     severity="error",
-                    fix_hint=f"Add '{field_name}' to frontmatter",
+                    fix_hint=f"Добавьте '{field_name}' в frontmatter",
                 ))
             elif not isinstance(page.meta[field_name], expected_type):
                 issues.append(LintIssue(
                     slug=page.slug, line=0,
                     kind="missing_frontmatter",
-                    detail=f"Field '{field_name}' has wrong type: "
-                           f"expected {expected_type}, "
-                           f"got {type(page.meta[field_name]).__name__}",
+                    detail=f"Поле '{field_name}' имеет неверный тип: "
+                           f"ожидался {expected_type.__name__}, "
+                           f"получен {type(page.meta[field_name]).__name__}",
                     severity="error",
-                    fix_hint=f"Fix type of '{field_name}' in frontmatter",
+                    fix_hint=f"Исправьте тип '{field_name}' в frontmatter",
                 ))
         if page.meta.get("type") not in {"entity", "concept", "index", "log", None}:
             issues.append(LintIssue(
                 slug=page.slug, line=0,
                 kind="missing_frontmatter",
-                detail=f"Unknown page type: '{page.meta.get('type')}'",
+                detail=f"Неизвестный тип страницы: '{page.meta.get('type')}'",
                 severity="warning",
-                fix_hint="Use one of: entity, concept, index, log",
+                fix_hint="Используйте один из: entity, concept, index, log",
             ))
         return issues
 
@@ -214,9 +214,9 @@ class WikiLinter:
             return [LintIssue(
                 slug=page.slug, line=0,
                 kind="char_limit",
-                detail=f"{page.char_count} chars, limit {limit} (+{over} over)",
+                detail=f"{page.char_count} символов, лимит {limit} (+{over} сверх лимита)",
                 severity="warning",
-                fix_hint="Split into two pages at a semantic boundary",
+                fix_hint="Разделите на две страницы по смысловой границе",
             )]
         return []
 
@@ -234,9 +234,9 @@ class WikiLinter:
                     issues.append(LintIssue(
                         slug=page.slug, line=lineno,
                         kind="broken_wikilink",
-                        detail=f"[[{target_slug}]] — target page not found",
+                        detail=f"[[{target_slug}]] — целевая страница не найдена",
                         severity="error",
-                        fix_hint=f"Create page '{target_slug}' or fix the slug",
+                        fix_hint=f"Создайте страницу '{target_slug}' или исправьте ссылку",
                     ))
                 elif anchor:
                     target_page = self._pages[target_slug]
@@ -244,10 +244,10 @@ class WikiLinter:
                         issues.append(LintIssue(
                             slug=page.slug, line=lineno,
                             kind="missing_anchor",
-                            detail=f"[[{target_slug}#{anchor}]] — anchor not found. "
-                                   f"Available: {sorted(target_page.anchors)}",
+                            detail=f"[[{target_slug}#{anchor}]] — якорь не найден. "
+                                   f"Доступные: {sorted(target_page.anchors)}",
                             severity="warning",
-                            fix_hint="Fix anchor name or add heading to target page",
+                            fix_hint="Исправьте имя якоря или добавьте заголовок в целевую страницу",
                         ))
         return issues
 
@@ -268,9 +268,9 @@ class WikiLinter:
                     issues.append(LintIssue(
                         slug=page.slug, line=lineno,
                         kind="broken_path_link",
-                        detail=f"[{match.group(1)}]({href}) — file not found",
+                        detail=f"[{match.group(1)}]({href}) — файл не найден",
                         severity="error",
-                        fix_hint="Fix relative path or convert to [[wikilink]] style",
+                        fix_hint="Исправьте относительный путь или преобразуйте в [[wikilink]]",
                     ))
         return issues
 
@@ -283,10 +283,10 @@ class WikiLinter:
             return [LintIssue(
                 slug=page.slug, line=0,
                 kind="superseded_active",
-                detail=f"Page is superseded by [[{page.meta['superseded_by']}]] "
-                       f"but still linked from: {sorted(incoming)}",
+                detail=f"Страница заменена на [[{page.meta['superseded_by']}]] "
+                       f"но всё ещё связана с: {sorted(incoming)}",
                 severity="warning",
-                fix_hint=f"Update links to point to [[{page.meta['superseded_by']}]]",
+                fix_hint=f"Обновите ссылки на [[{page.meta['superseded_by']}]]",
             )]
         return []
 
@@ -306,9 +306,9 @@ class WikiLinter:
             return [LintIssue(
                 slug=page.slug, line=0,
                 kind="stale_page",
-                detail=f"confidence={conf}, last_confirmed {days_old} days ago",
+                detail=f"уверенность={conf}, last_confirmed {days_old} дн. назад",
                 severity="info",
-                fix_hint="Re-confirm facts or update sources",
+                fix_hint="Перепроверьте факты или обновите источники",
             )]
         return []
 
@@ -339,9 +339,9 @@ class WikiLinter:
                 issues.append(LintIssue(
                     slug=page.slug, line=0,
                     kind="missing_wikilink",
-                    detail=f"'{alias}' appears but [[{c['slug']}]] is not linked",
+                    detail=f"'{alias}' встречается, но [[{c['slug']}]] не связана",
                     severity="info",
-                    fix_hint=f"Add [[{c['slug']}|{alias}]] on first mention",
+                    fix_hint=f"Добавьте [[{c['slug']}|{alias}]] при первом упоминании",
                 ))
                 break  # one match per candidate
 
@@ -353,7 +353,7 @@ class WikiLinter:
         return self._candidates_cache
 
     def _check_provenance(self, page: WikiPage) -> list[LintIssue]:
-        """Validate ^[raw/...] provenance markers reference existing raw files."""
+        """Проверка provenance-маркеров ^[raw/...] на существование raw-файлов."""
         issues = []
         markers = re.findall(r"\^\[raw/([^\]]+)\]", page.content)
         for ref in markers:
@@ -362,16 +362,16 @@ class WikiLinter:
                 issues.append(LintIssue(
                     slug=page.slug, line=0,
                     kind="invalid_provenance",
-                    detail=f"Provenance marker references non-existent raw file: raw/{ref}",
+                    detail=f"Provenance-маркер ссылается на несуществующий raw-файл: raw/{ref}",
                     severity="warning",
-                    fix_hint=f"Remove or correct the provenance marker ^[raw/{ref}]",
+                    fix_hint=f"Удалите или исправьте provenance-маркер ^[raw/{ref}]",
                 ))
         return issues
 
     # ── Global checks ────────────────────────────────────────────
 
     def _check_orphans(self, pages: list[WikiPage]) -> list[LintIssue]:
-        """Pages with no incoming wikilinks (index and log excluded)."""
+        """Страницы без входящих wikilinks (index и log исключены)."""
         issues = []
         excluded_types = {"index", "log"}
         excluded_slugs = {"index"}
@@ -385,14 +385,14 @@ class WikiLinter:
                 issues.append(LintIssue(
                     slug=page.slug, line=0,
                     kind="orphan_page",
-                    detail="No pages link to this page",
+                    detail="Ни одна страница не ссылается на эту",
                     severity="info",
-                    fix_hint="Add [[link]] from a related page or index",
+                    fix_hint="Добавьте [[ссылку]] из связанной страницы или индекса",
                 ))
         return issues
 
     def _check_duplicate_titles(self, pages: list[WikiPage]) -> list[LintIssue]:
-        """Two pages with same title within same project."""
+        """Two pages with same title in one project."""
         seen: dict[tuple[str, str], str] = {}  # (project, title) → slug
         issues = []
         for page in pages:
@@ -401,9 +401,9 @@ class WikiLinter:
                 issues.append(LintIssue(
                     slug=page.slug, line=0,
                     kind="duplicate_title",
-                    detail=f"Same title as [[{seen[key]}]] in project '{page.project}'",
+                    detail=f"Совпадает название с [[{seen[key]}]] в проекте '{page.project}'",
                     severity="warning",
-                    fix_hint="Differentiate titles or merge the pages",
+                    fix_hint="Различите названия или объедините страницы",
                 ))
             else:
                 seen[key] = page.slug

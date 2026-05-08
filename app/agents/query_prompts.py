@@ -60,11 +60,9 @@ Available tools:
   → returns list of matching page slugs and excerpts
 - read_page: {{"slug": str}}
   → returns full page content
-- execute_code: {{"code": str, "reasoning": str}}
-  → runs Python in sandbox (WIKI_ROOT variable available)
 
 Output format for tool call:
-{{"action": "search_wiki"|"read_page"|"execute_code", "input": {{...}}}}
+{{"action": "search_wiki"|"read_page", "input": {{...}}}}
 
 Output format for final answer:
 {{"action": "answer", "content": str}}

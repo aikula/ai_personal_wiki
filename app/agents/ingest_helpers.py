@@ -81,9 +81,10 @@ def dict_to_analysis_result(data: dict, source_file: str, project: str) -> Analy
                 conflict_type=str(item.get("conflict_type", "factual_contradiction")),
                 existing_slug=str(item.get("existing_slug", "")),
                 source_ref=str(item.get("source_ref", "")),
-                context_existing=str(item.get("context_existing", ""))[:300],
-                context_source=str(item.get("context_source", ""))[:300],
+                context_existing=str(item.get("context_existing", ""))[:600],
+                context_source=str(item.get("context_source", ""))[:600],
                 suggested_options=list(item.get("suggested_options", [])),
+                description=str(item.get("description", "")),
                 is_cross_project=bool(item.get("is_cross_project", False)),
             ))
         return conflicts
@@ -145,6 +146,7 @@ ANALYSIS_SCHEMA_HINT = """{
                           "supersedes": "old/slug" ],
   "conflicts": [
     {"conflict_type": str, "existing_slug": str, "source_ref": str,
+     "description": str,
      "context_existing": str, "context_source": str,
      "suggested_options": [str], "is_cross_project": bool}
   ],

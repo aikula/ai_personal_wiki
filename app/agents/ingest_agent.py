@@ -80,7 +80,7 @@ class IngestAgent:
 
     # ── Public entrypoint ────────────────────────────────────────
 
-    def run(self, raw_relative_path: str) -> IngestResult:
+    def run(self, raw_relative_path: str, allow_draft: bool = True) -> IngestResult:
         source_content = self.fs.read_raw_file(raw_relative_path)
         if source_content is None:
             logger.warning("Source file not found: %s", raw_relative_path)
@@ -97,7 +97,8 @@ class IngestAgent:
         project = self.fs.get_raw_project(
             self.fs.raw_dir / raw_relative_path
         )
-        logger.info("Ingest started: file=%s project=%s", raw_relative_path, project)
+        logger.info("Ingest started: file=%s project=%s allow_draft=%s",
+                    raw_relative_path, project, allow_draft)
 
         try:
             analysis = self._step1_analyze(
@@ -110,7 +111,7 @@ class IngestAgent:
                         len(analysis.pages_to_supersede), len(analysis.conflicts))
 
             pages_created, pages_updated, pages_superseded = \
-                self._step2_generate(analysis, source_content)
+                self._step2_generate(analysis, source_content, allow_draft=allow_draft)
 
             conflict_ids = self._record_conflicts(analysis)
 
@@ -250,6 +251,7 @@ print(json.dumps(result))
         self,
         analysis: AnalysisResult,
         source_content: str,
+        allow_draft: bool = True,
     ) -> tuple[list[str], list[str], list[str]]:
         pages_created: list[str] = []
         pages_updated: list[str] = []
@@ -333,19 +335,25 @@ print(json.dumps(result))
             all_candidates = self.fs.build_link_candidates()
             content = auto_link(content, all_candidates, current_slug=planned.slug)
 
-            if action == "create":
+            if action == "create" or not allow_draft:
                 try:
                     self.fs.write_page(
                         slug=planned.slug, meta=meta, content=content,
+                        allow_overwrite=(action != "create"),
                     )
-                    pages_created.append(planned.slug)
-                    logger.info("Step2 created: slug=%s", planned.slug)
+                    if action == "create":
+                        pages_created.append(planned.slug)
+                        logger.info("Step2 created: slug=%s", planned.slug)
+                    else:
+                        pages_updated.append(planned.slug)
+                        logger.info("Step2 wrote directly: slug=%s action=%s", planned.slug, action)
                 except Exception as exc:
-                    logger.warning("Step2 create failed: slug=%s error=%s",
-                                   planned.slug, exc)
+                    logger.warning("Step2 write failed: slug=%s action=%s error=%s",
+                                   planned.slug, action, exc)
                     self._log_failed_ingest(analysis)
                 continue
 
+            # allow_draft=True and action is update/supersede → queue as draft
             frontmatter_and_content = render_page_raw(meta, content)
             pending_updates.append({
                 "slug": planned.slug,
@@ -412,9 +420,10 @@ print(json.dumps(result))
                 conflict_type=conflict.conflict_type,
                 page_a_slug=conflict.existing_slug,
                 page_b_ref=conflict.source_ref,
-                context_a=conflict.context_existing[:300],
-                context_b=conflict.context_source[:300],
+                context_a=conflict.context_existing[:600],
+                context_b=conflict.context_source[:600],
                 suggested_options=conflict.suggested_options,
+                description=conflict.description,
             )
             self.fs.append_conflict(entry)
             assigned_ids.append(cid)
@@ -467,9 +476,13 @@ print(json.dumps(result))
 
         raw_files = self.fs.list_raw_files()
 
-        removed = self.fs.cleanup_orphan_conflicts(raw_files)
-        if removed:
-            logger.info("Rebuild: removed %d orphan conflicts", removed)
+        removed_conflicts = self.fs.clear_open_conflicts()
+        if removed_conflicts:
+            logger.info("Rebuild: cleared %d open conflicts", removed_conflicts)
+
+        removed_drafts = self.fs.clear_all_drafts()
+        if removed_drafts:
+            logger.info("Rebuild: cleared %d stale drafts", removed_drafts)
 
         self.fs.full_reset_wiki()
 
@@ -493,7 +506,8 @@ print(json.dumps(result))
             if progress_callback:
                 progress_callback(i + 1, len(raw_files), rel)
 
-            result = self.run(rel)
+            # During rebuild: write all pages directly, never create drafts
+            result = self.run(rel, allow_draft=False)
             if result.success:
                 results["success"] += 1
                 results["conflict_ids"] += result.conflict_ids

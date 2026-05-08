@@ -1,6 +1,8 @@
 # config/settings.yaml
 # Значения по умолчанию. Env vars имеют приоритет над yaml.
 
+language: "ru"
+
 llm:
   base_url: "https://api.openai.com/v1"
   api_key: ""
@@ -30,6 +32,7 @@ query:
   context_budget_chars: 21000
   max_wiki_pages_in_context: 6
   history_budget_chars: 7000
+  allow_code_execution: false
 
 audit:
   confidence_warn_threshold: 0.4

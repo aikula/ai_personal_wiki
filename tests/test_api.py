@@ -47,6 +47,12 @@ async def test_wiki_page_missing_returns_404(client):
 
 
 @pytest.mark.asyncio
+async def test_wiki_page_rejects_invalid_slug(client):
+    resp = await client.get("/api/wiki/page/%2E%2E/conflicts")
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_search_no_query_returns_422(client):
     resp = await client.get("/api/wiki/search")
     assert resp.status_code == 422
@@ -66,6 +72,16 @@ async def test_ingest_reject_non_md(client):
         "/api/ingest",
         data={"project": "_general"},
         files={"file": ("test.txt", b"hello", "text/plain")},
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_ingest_rejects_invalid_project_name(client):
+    resp = await client.post(
+        "/api/ingest",
+        data={"project": "../escape"},
+        files={"file": ("ok.md", b"# hello", "text/markdown")},
     )
     assert resp.status_code == 400
 

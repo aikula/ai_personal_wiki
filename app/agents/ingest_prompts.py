@@ -51,6 +51,12 @@ Rules:
 - If two projects implement same thing differently: conflict_type = "cross_project_difference"
   is_cross_project = true — this is NOT a real conflict, do not block
 - confidence: your certainty this page deserves to exist (0.0-1.0)
+- For each conflict, ALWAYS provide:
+  - description: 1-2 sentence plain-language summary of what EXACTLY contradicts.
+    State the specific claim from the wiki and the specific claim from the source.
+    Example: "Wiki says Redis uses allkeys-lru policy, but source states volatile-lru is configured."
+  - context_existing: verbatim quote (up to 600 chars) of the relevant passage from the wiki page
+  - context_source: verbatim quote (up to 600 chars) of the relevant passage from the source
 
 AnalysisResult JSON schema:
 {schema}

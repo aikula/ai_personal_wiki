@@ -20,6 +20,7 @@ from app.api.models import (
     WikiSearchResponse,
     WikiTreeResponse,
 )
+from app.core.utils import validate_slug
 
 router = APIRouter(prefix="/api/wiki", tags=["wiki"])
 
@@ -49,9 +50,15 @@ async def get_wiki_page(
     [[wikilinks]] in content are converted to clickable HTML links.
     slug: path segments, e.g. "myapp/storage/redis"
     """
-    page = fs.read_page(slug)
+    # Strip anchor if present in slug from frontend
+    clean_slug = slug.split("#")[0]
+    try:
+        validate_slug(clean_slug)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    page = fs.read_page(clean_slug)
     if page is None:
-        raise HTTPException(404, f"Page not found: {slug}")
+        raise HTTPException(404, f"Страница не найдена: {clean_slug}")
 
     # Convert [[slug]] to HTML links before markdown rendering
     html_content = _render_page_html(page.content, slug)
@@ -102,9 +109,15 @@ async def get_raw_markdown(
     fs: Annotated[WikiFS, Depends(get_wiki_fs)],
 ):
     """Return raw markdown including frontmatter. Used by edit view."""
-    page = fs.read_page(slug)
+    # Strip anchor if present in slug from frontend
+    clean_slug = slug.split("#")[0]
+    try:
+        validate_slug(clean_slug)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    page = fs.read_page(clean_slug)
     if page is None:
-        raise HTTPException(404, f"Page not found: {slug}")
+        raise HTTPException(404, f"Страница не найдена: {clean_slug}")
     return {"slug": slug, "raw": page.raw}
 
 
@@ -116,6 +129,9 @@ def _render_page_html(content: str, current_slug: str) -> str:
     Transforms [[slug]] → <a href="#wiki/slug" class="wikilink">title</a>
     Transforms [[slug|text]] → <a href="#wiki/slug" class="wikilink">text</a>
     Transforms [[slug#anchor]] → <a href="#wiki/slug" class="wikilink">slug</a>
+    Transforms ^[raw/path.md] → <sup class="provenance"><a href="#raw/path.md">path.md</a></sup>
+
+    Skips replacements inside code blocks.
     """
     import re
 
@@ -141,8 +157,25 @@ def _render_page_html(content: str, current_slug: str) -> str:
             f'{display}</a>'
         )
 
-    # Replace wikilinks before markdown processing
-    processed = re.sub(r"\[\[([^\]]+)\]\]", replace_wikilink, content)
+    def replace_provenance(match):
+        raw_path = match.group(1)
+        display = raw_path.split("/")[-1]
+        return (
+            f'<sup class="provenance">'
+            f'<a href="/api/wiki/raw/{raw_path}" title="Source: {raw_path}">'
+            f'^[{display}]</a></sup>'
+        )
+
+    # Replace wikilinks and provenance markers before markdown processing,
+    # skipping code blocks
+    parts = re.split(r"(```.*?```|`[^`]+`)", content, flags=re.DOTALL)
+    for i in range(len(parts)):
+        # Only replace in parts that are NOT code blocks
+        if not (parts[i].startswith("```") or parts[i].startswith("`")):
+            parts[i] = re.sub(r"\[\[([^\]]+)\]\]", replace_wikilink, parts[i])
+            parts[i] = re.sub(r"\^\[raw/([^\]]+)\]", replace_provenance, parts[i])
+
+    processed = "".join(parts)
 
     # Reset and convert
     _MD.reset()
