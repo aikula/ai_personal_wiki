@@ -114,12 +114,22 @@ def planned_page_to_dict(page: PlannedPage) -> dict:
     }
 
 
+REQUIRED_FRONTMATTER_FIELDS = {
+    "title", "project", "type", "tags",
+    "confidence", "sources", "last_confirmed",
+    "supersedes", "superseded_by", "created",
+}
+
+
 def render_page_raw(meta: dict, content: str) -> str:
-    meta_str = yaml.dump(
-        {k: v for k, v in meta.items() if v is not None},
-        default_flow_style=False,
-        allow_unicode=True,
-    ).strip()
+    # Preserve null values for required frontmatter fields
+    filtered_meta = {}
+    for k, v in meta.items():
+        if v is not None:
+            filtered_meta[k] = v
+        elif k in REQUIRED_FRONTMATTER_FIELDS:
+            filtered_meta[k] = None
+    meta_str = yaml.dump(filtered_meta, default_flow_style=False, allow_unicode=True).strip()
     return f"---\n{meta_str}\n---\n{content}\n"
 
 
