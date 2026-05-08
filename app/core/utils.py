@@ -122,7 +122,10 @@ def validate_project_name(project: str) -> None:
 
 
 def validate_raw_filename(filename: str) -> None:
-    """Validate raw source filename (single basename, markdown only)."""
+    """Validate raw source filename.
+    Supports markdown (.md), text (.txt), python (.py), 
+    and document formats (.pdf, .docx, .pptx) via mrkitdown.
+    """
     if not filename:
         raise ValueError("Имя файла не может быть пустым")
     if filename in (".", ".."):
@@ -133,8 +136,14 @@ def validate_raw_filename(filename: str) -> None:
         raise ValueError("Имя файла не должно содержать '..'")
     if ":" in filename:
         raise ValueError("Имя файла не должно содержать ':'")
-    if not filename.lower().endswith(".md"):
-        raise ValueError("Допустимы только файлы с расширением .md")
+    
+    # Allowed extensions
+    allowed_extensions = {'.md', '.txt', '.py', '.pdf', '.docx', '.pptx'}
+    if not any(filename.lower().endswith(ext) for ext in allowed_extensions):
+        raise ValueError(
+            f"Неподдерживаемый тип файла. "
+            f"Допустимые расширения: {', '.join(sorted(allowed_extensions))}"
+        )
 
 
 # ═══════════════════════════════════════════════════════════════

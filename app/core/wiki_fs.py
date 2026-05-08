@@ -18,6 +18,11 @@ import json
 import logging
 import re
 import shutil
+try:
+    from mrkitdown import convert
+    MRKITDOWN_AVAILABLE = True
+except ImportError:
+    MRKITDOWN_AVAILABLE = False
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -502,6 +507,8 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         """
         Read raw source file. relative_path from raw/ root.
         e.g. "myapp/deploy_guide.md"
+        For .md, .txt, .py files: returns UTF-8 text content.
+        For .pdf, .docx, .pptx files: uses mrkitdown to extract text content.
         Returns None if not found.
         """
         if not relative_path:
@@ -509,7 +516,34 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         path = self._resolve_in_dir(self.raw_dir, relative_path)
         if not path.exists():
             return None
-        return path.read_text(encoding="utf-8")
+            
+        # Handle text-based formats directly
+        if path.suffix.lower() in {'.md', '.txt', '.py'}:
+            return path.read_text(encoding="utf-8")
+        
+        # Handle document formats with mrkitdown
+        if path.suffix.lower() in {'.pdf', '.docx', '.pptx'}:
+            if not MRKITDOWN_AVAILABLE:
+                logger.warning("mrkitdown not available, cannot read %s", path.suffix)
+                return None
+            try:
+                # mrkitdown converts various formats to markdown/text
+                result = convert(str(path))
+                # Extract text content from the conversion result
+                if hasattr(result, 'text_content'):
+                    return result.text_content
+                elif hasattr(result, 'content'):
+                    return result.content
+                else:
+                    # Fallback to string representation
+                    return str(result)
+            except Exception as e:
+                logger.error("Failed to convert %s with mrkitdown: %s", path, e)
+                return None
+        
+        # For unsupported formats, return None (should not happen due to validation)
+        logger.warning("Unsupported file format: %s", path.suffix)
+        return None
 
     def save_raw_file(self, project: str, filename: str, content: str) -> Path:
         validate_project_name(project)

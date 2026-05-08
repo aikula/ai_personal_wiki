@@ -67,13 +67,15 @@ async def test_search_empty_result(client):
 
 
 @pytest.mark.asyncio
-async def test_ingest_reject_non_md(client):
+async def test_ingest_accepts_txt_file(client):
     resp = await client.post(
         "/api/ingest",
         data={"project": "_general"},
         files={"file": ("test.txt", b"hello", "text/plain")},
     )
-    assert resp.status_code == 400
+    # .txt files are now accepted (though may fail later due to missing API key)
+    # but the initial validation should pass
+    assert resp.status_code != 400  # Should not be rejected by file type validation
 
 
 @pytest.mark.asyncio

@@ -46,8 +46,13 @@ async def ingest_file(
     Upload a single markdown file and ingest it into wiki.
     File is saved to raw/<project>/<filename>, then processed.
     """
-    if not file.filename or not file.filename.endswith(".md"):
-        raise HTTPException(400, "Принимаются только .md файлы")
+    if not file.filename:
+        raise HTTPException(400, "Имя файла не может быть пустым")
+    
+    # Check if file extension is allowed
+    allowed_extensions = {'.md', '.txt', '.py', '.pdf', '.docx', '.pptx'}
+    if not any(file.filename.lower().endswith(ext) for ext in allowed_extensions):
+        raise HTTPException(400, f"Неподдерживаемый тип файла. Допустимые расширения: {', '.join(sorted(allowed_extensions))}")
     try:
         validate_project_name(project)
         validate_raw_filename(file.filename)
