@@ -415,6 +415,8 @@ class WikiLinter:
         """Build reverse link index: slug → set of slugs that link to it."""
         self._incoming = {slug: set() for slug in self._pages}
         for page in self._pages.values():
+            if page.page_type == "index":  # skip index pages (L0/L1)
+                continue
             for linked_slug in page.wikilinks:
                 if linked_slug in self._incoming:
                     self._incoming[linked_slug].add(page.slug)

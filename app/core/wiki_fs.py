@@ -358,6 +358,8 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
             outgoing_count[p.slug] = 0
 
         for p in pages:
+            if p.page_type == "index":  # skip index pages (L0/L1)
+                continue
             for linked in p.wikilinks:
                 if linked in incoming:
                     incoming[linked].add(p.slug)
@@ -932,6 +934,16 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         open_conf = self.count_open_conflicts()
         today = date.today().isoformat()
 
+        # Group pages by project
+        by_project: dict[str, list] = {}
+        for p in pages:
+            by_project.setdefault(p.project, []).append(p)
+
+        # Write per-project L1 indices
+        for proj, proj_pages in by_project.items():
+            self._write_project_index(proj, proj_pages, today)
+
+        # Update main L0 index
         index_path = self.wiki_dir / "index.md"
         index_page = self.read_page("index")
         if index_page is None:
@@ -959,6 +971,56 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
             encoding="utf-8"
         )
         logger.info("Index rebuilt: pages=%d projects=%d", len(pages), len(projects))
+
+    def _write_project_index(self, project: str, pages: list, today: str) -> None:
+        """Write per-project L1 index (wiki/<project>/index.md)."""
+        # Group pages by type
+        by_type: dict[str, list] = {}
+        for p in pages:
+            by_type.setdefault(p.page_type, []).append(p)
+
+        # Content
+        lines = [
+            f"# {project} Wiki",
+            "",
+            f"Last updated: {today}",
+            f"Pages: {len(pages)}",
+            "",
+        ]
+
+        for page_type in ["entity", "concept", "index", "log"]:
+            if page_type in by_type:
+                lines.append(f"## {page_type.title()}s")
+                for p in by_type[page_type]:
+                    lines.append(f"[[{p.slug}]] — {p.title}")
+                lines.append("")
+
+        content = "\n".join(lines).rstrip() + "\n"
+
+        # Check char limit
+        if len(content) > self.limits.index_l1_chars:
+            logger.warning("Project index %s exceeds char limit", project)
+
+        # Frontmatter
+        meta = {
+            "title": f"{project} Wiki",
+            "project": project,
+            "type": "index",
+            "tags": [],
+            "confidence": 1.0,
+            "sources": 0,
+            "last_confirmed": today,
+            "supersedes": None,
+            "superseded_by": None,
+            "created": today,
+        }
+
+        # Write using frontmatter (same as write_page)
+        index_path = self.wiki_dir / project / "index.md"
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        post = frontmatter.Post(content, **meta)
+        index_path.write_text(frontmatter.dumps(post), encoding="utf-8")
+        logger.debug("Wrote project index: %s", project)
 
     def cleanup_orphan_conflicts(self, existing_raw_files: list[Path]) -> int:
         """Remove OPEN conflicts whose source_file no longer exists in raw/.
@@ -1047,6 +1109,7 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         open_conf = self.count_open_conflicts()
         today = date.today().isoformat()
 
+        # Update main L0 index
         index_path = self.wiki_dir / "index.md"
         index_page = self.read_page("index")
         if index_page is None:
@@ -1078,6 +1141,10 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
             frontmatter.dumps(frontmatter.Post(new_content, **index_page.meta)),
             encoding="utf-8"
         )
+
+        # Update per-project L1 index
+        proj_pages = [p for p in pages if p.project == project]
+        self._write_project_index(project, proj_pages, today)
 
     def _remove_index_entry(self, slug: str) -> None:
         """Remove specific slug mention from index.md."""
