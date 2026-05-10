@@ -1,11 +1,4 @@
-"""
-ingest.py — File upload, batch ingest, raw file listing, rebuild.
-
-POST /api/ingest              — upload single .md file
-POST /api/ingest/batch        — upload multiple .md files
-GET  /api/ingest/raw          — list raw files
-POST /api/ingest/rebuild      — rebuild wiki from raw (SSE stream)
-"""
+"""File upload, batch ingest, raw listing, and rebuild routes."""
 
 from __future__ import annotations
 
@@ -15,76 +8,28 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from app.api.dependencies import (
-    IngestAgent,
-    WikiFS,
-    get_ingest_agent,
-    get_wiki_fs,
-)
-from app.api.models import (
-    IngestFileResponse,
-    RebuildRequest,
+from app.api.dependencies import IngestAgent, WikiFS, get_ingest_agent, get_wiki_fs
+from app.api.models import IngestFileResponse, RebuildRequest
+from app.core.raw_sources import (
+    RAW_ALLOWED_EXTENSIONS,
+    check_source_state_bytes,
+    list_raw_source_files,
+    save_raw_file_bytes,
 )
 from app.core.utils import validate_project_name, validate_raw_filename
 
 logger = logging.getLogger("wiki.api.ingest")
-
 router = APIRouter(prefix="/api/ingest", tags=["ingest"])
 
 
-@router.post("", response_model=IngestFileResponse)
-async def ingest_file(
-    project: str = Form(default="_general"),
-    file: UploadFile = File(...),  # noqa: B008
-    agent: Annotated[IngestAgent, Depends(get_ingest_agent)] = None,
-    fs: Annotated[WikiFS, Depends(get_wiki_fs)] = None,
-):
-    """
-    Upload a single markdown file and ingest it into wiki.
-    File is saved to raw/<project>/<filename>, then processed.
-    """
-    if not file.filename:
-        raise HTTPException(400, "Имя файла не может быть пустым")
-    
-    # Check if file extension is allowed
-    allowed_extensions = {'.md', '.txt', '.py', '.pdf', '.docx', '.pptx'}
-    if not any(file.filename.lower().endswith(ext) for ext in allowed_extensions):
-        raise HTTPException(400, f"Неподдерживаемый тип файла. Допустимые расширения: {', '.join(sorted(allowed_extensions))}")
-    try:
-        validate_project_name(project)
-        validate_raw_filename(file.filename)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+def _allowed_ext_text() -> str:
+    return ", ".join(sorted(RAW_ALLOWED_EXTENSIONS))
 
-    content = await file.read()
-    content_str = content.decode("utf-8")
 
-    raw_path = f"{project}/{file.filename}"
-    state = fs.check_source_state(raw_path, content_str)
-
-    if state["status"] == "unchanged":
-        logger.info("Source unchanged, skipping: %s", raw_path)
-        return IngestFileResponse(
-            success=True, source_file=raw_path, project=project,
-            pages_created=[], pages_updated=[], pages_superseded=[],
-            conflict_ids=[], skills_triggered=[], lint_errors=0,
-            lint_warnings=0, analysis_notes="Source unchanged, skipped",
-            error=None,
-        )
-
-    if state["status"] == "duplicate":
-        logger.info("Duplicate source detected: %s → %s", raw_path, state["duplicate_of"])
-
-    fs.save_raw_file(project, file.filename, content_str)
-
-    logger.info("Ingest file: %s project=%s", raw_path, project)
-    result = agent.run(raw_path)
-    logger.info("Ingest result: success=%s created=%d updated=%d",
-                result.success, len(result.pages_created), len(result.pages_updated))
-
+def _to_response(result) -> IngestFileResponse:
     return IngestFileResponse(
         success=result.success,
         source_file=result.source_file,
@@ -101,43 +46,94 @@ async def ingest_file(
     )
 
 
-@router.post("/batch")
-async def ingest_batch(
-    project: str = Form(default="_general"),
-    files: list[UploadFile] = File(...),  # noqa: B008
+async def _read_form_file(request: Request):
+    form = await request.form()
+    project = str(form.get("project") or "_general")
+    source_file = form.get("file")
+    if source_file is None or not getattr(source_file, "filename", None):
+        raise HTTPException(400, "Файл не передан")
+    return project, source_file
+
+
+async def _save_and_ingest(project: str, source_file, agent: IngestAgent, fs: WikiFS):
+    filename = source_file.filename
+    try:
+        validate_project_name(project)
+        validate_raw_filename(filename)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    if not any(filename.lower().endswith(ext) for ext in RAW_ALLOWED_EXTENSIONS):
+        raise HTTPException(
+            400,
+            "Неподдерживаемый тип файла. Допустимые расширения: " + _allowed_ext_text(),
+        )
+
+    content = await source_file.read()
+    raw_path = f"{project}/{filename}"
+    state = check_source_state_bytes(fs.state_dir, raw_path, content)
+
+    if state["status"] == "unchanged":
+        return IngestFileResponse(
+            success=True,
+            source_file=raw_path,
+            project=project,
+            pages_created=[],
+            pages_updated=[],
+            pages_superseded=[],
+            conflict_ids=[],
+            skills_triggered=[],
+            lint_errors=0,
+            lint_warnings=0,
+            analysis_notes="Source unchanged, skipped",
+            error=None,
+        )
+
+    save_raw_file_bytes(fs.raw_dir, fs.state_dir, project, filename, content)
+    result = agent.run(raw_path)
+    return _to_response(result)
+
+
+@router.post("", response_model=IngestFileResponse)
+async def ingest_file(
+    request: Request,
     agent: Annotated[IngestAgent, Depends(get_ingest_agent)] = None,
     fs: Annotated[WikiFS, Depends(get_wiki_fs)] = None,
 ):
-    """
-    Upload and ingest multiple markdown files sequentially.
-    Returns summary of all ingests.
-    """
+    project, source_file = await _read_form_file(request)
+    return await _save_and_ingest(project, source_file, agent, fs)
+
+
+@router.post("/batch")
+async def ingest_batch(
+    request: Request,
+    agent: Annotated[IngestAgent, Depends(get_ingest_agent)] = None,
+    fs: Annotated[WikiFS, Depends(get_wiki_fs)] = None,
+):
+    form = await request.form()
+    project = str(form.get("project") or "_general")
     try:
         validate_project_name(project)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+
     results = []
-    for file in files:
-        if not file.filename or not file.filename.endswith(".md"):
+    skipped = []
+    for key, source_file in form.multi_items():
+        if key != "files":
+            continue
+        if not getattr(source_file, "filename", None):
+            skipped.append({"file": "", "reason": "empty filename"})
             continue
         try:
-            validate_raw_filename(file.filename)
-        except ValueError:
-            continue
-        content = await file.read()
-        content_str = content.decode("utf-8")
-        fs.save_raw_file(project, file.filename, content_str)
-        raw_path = f"{project}/{file.filename}"
-        result = agent.run(raw_path)
-        results.append({
-            "file": file.filename,
-            "success": result.success,
-            "pages_created": result.pages_created,
-            "error": result.error,
-        })
+            response = await _save_and_ingest(project, source_file, agent, fs)
+            results.append(response.model_dump())
+        except HTTPException as exc:
+            skipped.append({"file": source_file.filename, "reason": exc.detail})
 
     return {
         "total": len(results),
+        "skipped": skipped,
         "successes": sum(1 for r in results if r["success"]),
         "failures": sum(1 for r in results if not r["success"]),
         "details": results,
@@ -149,19 +145,19 @@ async def list_raw_files(
     project: str | None = None,
     fs: Annotated[WikiFS, Depends(get_wiki_fs)] = None,
 ):
-    """List raw markdown files, optionally filtered by project."""
     if project is not None:
         try:
             validate_project_name(project)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-    files = fs.list_raw_files(project=project)
+    files = list_raw_source_files(fs.raw_dir, project=project)
     return {
         "files": [
             {
                 "path": str(f.relative_to(fs.raw_dir)),
                 "project": fs.get_raw_project(f),
                 "size": f.stat().st_size,
+                "extension": f.suffix.lower(),
             }
             for f in files
         ],
@@ -174,11 +170,6 @@ async def rebuild_wiki(
     body: RebuildRequest,
     agent: Annotated[IngestAgent, Depends(get_ingest_agent)] = None,
 ):
-    """
-    Rebuild entire wiki from raw files.
-    Requires confirm=true to prevent accidental deletion.
-    Returns SSE stream with progress updates.
-    """
     if not body.confirm:
         raise HTTPException(400, "Необходимо установить confirm=true для перестройки")
 
@@ -190,20 +181,12 @@ async def rebuild_wiki(
             loop.call_soon_threadsafe(queue.put_nowait, event)
 
         def progress_callback(current: int, total: int, filename: str):
-            push_event({
-                "current": current,
-                "total": total,
-                "filename": filename,
-                "status": "processing",
-            })
+            push_event({"current": current, "total": total, "filename": filename, "status": "processing"})
 
         def run_rebuild():
             try:
-                logger.info("Rebuild requested")
                 result = agent.rebuild_from_scratch(progress_callback=progress_callback)
                 push_event({"result": result, "status": "complete"})
-                logger.info("Rebuild completed: success=%d failed=%d",
-                            result["success"], result["failed"])
             except Exception as exc:
                 logger.exception("Rebuild failed")
                 push_event({"status": "error", "message": str(exc)})
@@ -211,41 +194,27 @@ async def rebuild_wiki(
                 push_event(None)
 
         thread = loop.run_in_executor(None, run_rebuild)
-
         while True:
             event = await asyncio.wait_for(queue.get(), timeout=120)
             if event is None:
                 break
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-
         await thread
 
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
-# ── Draft management ─────────────────────────────────────────
-
 @router.get("/drafts")
-async def list_drafts(
-    fs: Annotated[WikiFS, Depends(get_wiki_fs)],
-):
-    """List all pending draft artifacts."""
+async def list_drafts(fs: Annotated[WikiFS, Depends(get_wiki_fs)]):
     return {"drafts": fs.list_drafts()}
 
 
 @router.get("/drafts/{draft_id}")
-async def get_draft(
-    draft_id: str,
-    fs: Annotated[WikiFS, Depends(get_wiki_fs)],
-):
-    """Get full draft details including diffs and candidate pages."""
+async def get_draft(draft_id: str, fs: Annotated[WikiFS, Depends(get_wiki_fs)]):
     draft = fs.read_draft(draft_id)
     if draft is None:
         raise HTTPException(404, f"Черновик не найден: {draft_id}")
@@ -253,11 +222,7 @@ async def get_draft(
 
 
 @router.post("/drafts/{draft_id}/apply")
-async def apply_draft(
-    draft_id: str,
-    fs: Annotated[WikiFS, Depends(get_wiki_fs)],
-):
-    """Apply a draft: write all candidate pages to the wiki."""
+async def apply_draft(draft_id: str, fs: Annotated[WikiFS, Depends(get_wiki_fs)]):
     try:
         applied = fs.apply_draft(draft_id)
         return {"status": "applied", "pages": applied}
@@ -266,11 +231,7 @@ async def apply_draft(
 
 
 @router.post("/drafts/{draft_id}/reject")
-async def reject_draft(
-    draft_id: str,
-    fs: Annotated[WikiFS, Depends(get_wiki_fs)],
-):
-    """Reject a draft: remove it without applying."""
+async def reject_draft(draft_id: str, fs: Annotated[WikiFS, Depends(get_wiki_fs)]):
     if fs.reject_draft(draft_id):
         return {"status": "rejected"}
     raise HTTPException(404, f"Черновик не найден: {draft_id}")
