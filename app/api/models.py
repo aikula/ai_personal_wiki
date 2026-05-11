@@ -151,6 +151,7 @@ class ConflictOut(BaseModel):
     page_a_slug: str
     page_b_ref: str
     description: str = ""   # LLM summary of what exactly contradicts
+    is_cross_project: bool = False  # True if cross_project_difference
     context_a: str          # relevant excerpt from wiki page
     context_b: str          # relevant excerpt from source document
     suggested_options: list[str]

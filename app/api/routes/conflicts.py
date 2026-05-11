@@ -304,6 +304,9 @@ def _parse_conflicts_md(raw: str) -> tuple[list[ConflictOut], list[ConflictOut]]
                 return []
             return re.findall(r"\d+\.\s+(.+)", section.group(1))
 
+        cross_project_raw = extract("Cross-project", block, "false").lower()
+        is_cross_project = cross_project_raw == "true" or extract("Conflict type", block) == "cross_project_difference"
+
         entry = ConflictOut(
             id=cid,
             status=status,
@@ -314,6 +317,7 @@ def _parse_conflicts_md(raw: str) -> tuple[list[ConflictOut], list[ConflictOut]]
             page_a_slug=_extract_slug(extract("Page A (wiki)", block) or extract("Page A", block)),
             page_b_ref=extract("Page B (source)", block) or extract("Page B", block),
             description=extract("Description", block, ""),
+            is_cross_project=is_cross_project,
             context_a=extract("Context A (wiki excerpt)", block) or extract("Context A", block),
             context_b=extract("Context B (source excerpt)", block) or extract("Context B", block),
             suggested_options=extract_list("Suggested options", block),

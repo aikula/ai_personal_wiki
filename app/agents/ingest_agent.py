@@ -31,7 +31,7 @@ from app.core.linter import WikiLinter
 from app.core.llm_client import LLMClient
 from app.core.raw_sources import RawSourceError, list_raw_source_files, read_raw_source_file
 from app.core.token_budget import ContextBudget
-from app.core.utils import auto_link, now_iso
+from app.core.utils import auto_link, validate_wikilinks, now_iso
 from app.core.wiki_fs import ConflictEntry, IngestLog, WikiFS, WikiPage
 
 logger = logging.getLogger("wiki.ingest")
@@ -222,7 +222,7 @@ print(json.dumps(result))
             char_limit = self._char_limit_for_type(planned.page_type)
             source_sections_text = "\n\n---\n\n".join(planned.source_sections)[:3000]
             existing_trimmed = existing_content[:2000]
-            candidates = self.fs.build_link_candidates(project=planned.project)
+            candidates = self.fs.build_link_candidates()
             link_lines = []
             for c in candidates[:15]:
                 alias_str = "; ".join(c["aliases"][:3])
@@ -251,6 +251,11 @@ print(json.dumps(result))
             if not meta.get("created"):
                 meta["created"] = today
             content = auto_link(content, self.fs.build_link_candidates(), current_slug=planned.slug)
+            # Validate wikilinks against existing pages
+            existing_slugs = {p.slug for p in self.fs.list_pages()}
+            broken = validate_wikilinks(content, existing_slugs)
+            if broken:
+                logger.warning("Step2 %s has %d broken wikilinks: %s", planned.slug, len(broken), broken)
             if action == "create" or not allow_draft:
                 try:
                     self.fs.write_page(slug=planned.slug, meta=meta, content=content, allow_overwrite=(action != "create"))
@@ -308,6 +313,7 @@ print(json.dumps(result))
                 context_b=conflict.context_source[:600],
                 suggested_options=conflict.suggested_options,
                 description=conflict.description,
+                is_cross_project=conflict.is_cross_project,
             )
             self.fs.append_conflict(entry)
             assigned_ids.append(cid)

@@ -772,6 +772,7 @@ function ConflictsPanel() {
   const toast = React.useContext(ToastCtx);
   const [data, setData] = useState({ open: [], resolved: [], total_open: 0 });
   const [tab, setTab] = useState('open');
+  const [crossTab, setCrossTab] = useState(false);
   const [resolving, setResolving] = useState({});
   const [selections, setSelections] = useState({});
   const [comments, setComments] = useState({});
@@ -832,26 +833,39 @@ function ConflictsPanel() {
   };
 
   const list = tab === 'open' ? data.open : data.resolved;
+  const openReal = data.open.filter(c => !c.is_cross_project);
+  const openCross = data.open.filter(c => c.is_cross_project);
+  const resolvedReal = data.resolved.filter(c => !c.is_cross_project);
+  const resolvedCross = data.resolved.filter(c => c.is_cross_project);
+
+  const displayList = tab === 'open' ? (crossTab ? openCross : openReal)
+    : (crossTab ? resolvedCross : resolvedReal);
 
   return (
     <div style={{display:'flex', flexDirection:'column', flex:1, overflow:'hidden'}}>
       <div className="tab-bar">
-        <div className={`tab ${tab==='open'?'active':''}`} onClick={()=>setTab('open')}>
-          Открытые {data.total_open > 0 && <span className="badge">{data.total_open}</span>}
+        <div className={`tab ${tab==='open'&&!crossTab?'active':''}`} onClick={()=>{setTab('open');setCrossTab(false);}}>
+          Конфликты {openReal.length > 0 && <span className="badge">{openReal.length}</span>}
         </div>
-        <div className={`tab ${tab==='resolved'?'active':''}`} onClick={()=>setTab('resolved')}>
-          Решённые ({data.resolved.length})
+        <div className={`tab ${tab==='open'&&crossTab?'active':''}`} onClick={()=>{setTab('open');setCrossTab(true);}}>
+          Кросс-проект {openCross.length > 0 && <span className="badge" style={{background:'var(--blue)'}}>{openCross.length}</span>}
+        </div>
+        <div className={`tab ${tab==='resolved'&&!crossTab?'active':''}`} onClick={()=>{setTab('resolved');setCrossTab(false);}}>
+          Решённые ({resolvedReal.length})
+        </div>
+        <div className={`tab ${tab==='resolved'&&crossTab?'active':''}`} onClick={()=>{setTab('resolved');setCrossTab(true);}}>
+          Кросс-проект ({resolvedCross.length})
         </div>
       </div>
       <div style={{flex:1, overflowY:'auto'}}>
-        {list.length === 0 && (
+        {displayList.length === 0 && (
           <div style={{padding:24, textAlign:'center', color:'var(--text-dim)', fontSize:13}}>
-            {tab==='open' ? '✓ Нет открытых конфликтов' : 'Нет решённых конфликтов'}
+            {tab==='open' ? (crossTab ? '✓ Нет кросс-проектных различий' : '✓ Нет открытых конфликтов') : 'Нет решённых конфликтов'}
           </div>
         )}
-        {list.map(c => (
-          <div key={c.id} className={`conflict-card ${c.status.toLowerCase()}`}>
-            <div className="conflict-id">{c.id}</div>
+        {displayList.map(c => (
+          <div key={c.id} className={`conflict-card ${c.status.toLowerCase()} ${c.is_cross_project ? 'cross-project' : ''}`}>
+            <div className="conflict-id">{c.id} {c.is_cross_project && <span style={{fontSize:10, color:'var(--blue)', marginLeft:6}}>🔀 кросс-проект</span>}</div>
             <div className="conflict-type">
               {c.conflict_type} · {c.project} · {c.date}
             </div>
@@ -861,11 +875,14 @@ function ConflictsPanel() {
             </div>
             {c.description && (
               <div style={{
-                background:'rgba(255,165,0,0.08)', border:'1px solid rgba(255,165,0,0.25)',
+                background: c.is_cross_project ? 'rgba(100,149,237,0.08)' : 'rgba(255,165,0,0.08)',
+                border: c.is_cross_project ? '1px solid rgba(100,149,237,0.25)' : '1px solid rgba(255,165,0,0.25)',
                 borderRadius:6, padding:'8px 12px', marginBottom:8, fontSize:12,
                 color:'var(--text)', lineHeight:1.5,
               }}>
-                <span style={{color:'#f90', fontWeight:600, marginRight:6}}>⚠ Суть конфликта:</span>
+                <span style={{color: c.is_cross_project ? 'var(--blue)' : '#f90', fontWeight:600, marginRight:6}}>
+                  {c.is_cross_project ? '🔀 Различие:' : '⚠ Суть конфликта:'}
+                </span>
                 {c.description}
               </div>
             )}
@@ -896,30 +913,50 @@ function ConflictsPanel() {
 
             {c.status === 'OPEN' && (
               <>
-                {c.suggested_options.length > 0 && (
-                  <div className="conflict-options">
-                    {c.suggested_options.map((opt, i) => (
-                      <div key={i}
-                        className={`conflict-option ${selections[c.id]===opt?'selected':''}`}
-                        onClick={() => setSelections(s => ({...s, [c.id]: opt}))}>
-                        {opt}
-                      </div>
-                    ))}
+                {c.is_cross_project ? (
+                  <div style={{marginTop:8}}>
+                    <div style={{fontSize:11, color:'var(--text-dim)', marginBottom:8}}>
+                      Это различие между проектами — не конфликт. Отметить как информационное?
+                    </div>
+                    <button className="btn-resolve"
+                      style={{background:'var(--blue)', fontSize:11, padding:'4px 10px'}}
+                      disabled={resolving[c.id]}
+                      onClick={() => {
+                        setSelections(s => ({...s, [c.id]: 'Mark as cross-project difference'}));
+                        setComments(cm => ({...cm, [c.id]: 'Cross-project difference — informational only'}));
+                        setTimeout(() => resolve(c.id), 50);
+                      }}>
+                      {resolving[c.id] ? 'Отмечаю…' : '✓ Отметить как кросс-проект'}
+                    </button>
                   </div>
+                ) : (
+                  <>
+                    {c.suggested_options.length > 0 && (
+                      <div className="conflict-options">
+                        {c.suggested_options.map((opt, i) => (
+                          <div key={i}
+                            className={`conflict-option ${selections[c.id]===opt?'selected':''}`}
+                            onClick={() => setSelections(s => ({...s, [c.id]: opt}))}>
+                            {opt}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <textarea className="conflict-comment-input" rows={2}
+                      placeholder="Ваш комментарий или указание (обязательно для извлечения навыка)…"
+                      value={comments[c.id] || ''}
+                      onChange={e => setComments(cm => ({...cm, [c.id]: e.target.value}))} />
+                    <button className="btn-resolve"
+                      disabled={!selections[c.id] || resolving[c.id]}
+                      onClick={() => resolve(c.id)}>
+                      {resolving[c.id] ? 'Решение…' : '✓ Решить и извлечь навык'}
+                    </button>
+                    <button className="btn-comment"
+                      onClick={() => addComment(c.id)}>
+                      + Добавить комментарий (оставить открытым)
+                    </button>
+                  </>
                 )}
-                <textarea className="conflict-comment-input" rows={2}
-                  placeholder="Ваш комментарий или указание (обязательно для извлечения навыка)…"
-                  value={comments[c.id] || ''}
-                  onChange={e => setComments(cm => ({...cm, [c.id]: e.target.value}))} />
-                <button className="btn-resolve"
-                  disabled={!selections[c.id] || resolving[c.id]}
-                  onClick={() => resolve(c.id)}>
-                  {resolving[c.id] ? 'Решение…' : '✓ Решить и извлечь навык'}
-                </button>
-                <button className="btn-comment"
-                  onClick={() => addComment(c.id)}>
-                  + Добавить комментарий (оставить открытым)
-                </button>
               </>
             )}
             {c.status === 'RESOLVED' && (

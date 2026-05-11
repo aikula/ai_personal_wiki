@@ -19,10 +19,10 @@ import logging
 import re
 import shutil
 try:
-    from mrkitdown import convert
-    MRKITDOWN_AVAILABLE = True
+    from markitdown import MarkItDown
+    MARKITDOWN_AVAILABLE = True
 except ImportError:
-    MRKITDOWN_AVAILABLE = False
+    MARKITDOWN_AVAILABLE = False
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -145,6 +145,7 @@ class ConflictEntry:
     context_b: str             # relevant excerpt from source document (up to 600 chars)
     suggested_options: list[str]
     description: str = ""      # 1-2 sentence LLM summary of what exactly contradicts
+    is_cross_project: bool = False  # True if cross_project_difference
     user_comment: str = ""
     resolution: str = "pending"
     skill_extracted: str = ""
@@ -557,24 +558,18 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         if path.suffix.lower() in {'.md', '.txt', '.py'}:
             return path.read_text(encoding="utf-8")
         
-        # Handle document formats with mrkitdown
+        # Handle document formats with markitdown
         if path.suffix.lower() in {'.pdf', '.docx', '.pptx'}:
-            if not MRKITDOWN_AVAILABLE:
-                logger.warning("mrkitdown not available, cannot read %s", path.suffix)
+            if not MARKITDOWN_AVAILABLE:
+                logger.warning("markitdown not available, cannot read %s", path.suffix)
                 return None
             try:
-                # mrkitdown converts various formats to markdown/text
-                result = convert(str(path))
-                # Extract text content from the conversion result
-                if hasattr(result, 'text_content'):
-                    return result.text_content
-                elif hasattr(result, 'content'):
-                    return result.content
-                else:
-                    # Fallback to string representation
-                    return str(result)
+                converter = MarkItDown()
+                result = converter.convert(str(path))
+                text = getattr(result, "text_content", None) or str(result)
+                return text if text.strip() else None
             except Exception as e:
-                logger.error("Failed to convert %s with mrkitdown: %s", path, e)
+                logger.error("Failed to convert %s with markitdown: %s", path, e)
                 return None
         
         # For unsupported formats, return None (should not happen due to validation)
@@ -1403,12 +1398,17 @@ def _render_conflict_block(entry: ConflictEntry) -> str:
         f"- **Description:** {entry.description}\n"
         if entry.description else ""
     )
+    cross_project_line = (
+        f"- **Cross-project:** true\n"
+        if entry.is_cross_project else ""
+    )
     return (
         f"## [{entry.status}] {entry.id}\n\n"
         f"- **Date:** {entry.date}\n"
         f"- **Project:** {entry.project}\n"
         f"- **Source file:** {entry.source_file}\n"
         f"- **Conflict type:** {entry.conflict_type}\n"
+        f"{cross_project_line}"
         f"- **Page A (wiki):** [[{entry.page_a_slug}]]\n"
         f"- **Page B (source):** {entry.page_b_ref}\n"
         f"{description_line}"

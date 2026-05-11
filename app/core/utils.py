@@ -154,7 +154,7 @@ _SKIP_BLOCKS = re.compile(
     r"```.*?```|`[^`]+`|\[\[[^\]]+\]\]|\[[^]]+\]\([^)]+\)|^#{1,6}\s.*$",
     re.DOTALL | re.MULTILINE,
 )
-_AUTO_LINK_MAX = 6
+_AUTO_LINK_MAX = 10
 
 
 def auto_link(
@@ -224,3 +224,17 @@ def auto_link(
         result_lines.append(modified)
 
     return "\n".join(result_lines)
+
+
+def validate_wikilinks(content: str, existing_slugs: set[str]) -> list[str]:
+    """Check all [[slug]] references in content against existing slugs.
+
+    Returns list of broken slugs that don't exist.
+    Handles [[slug]], [[slug|text]], and [[slug#anchor]] formats.
+    """
+    broken = []
+    for match in re.finditer(r"\[\[([^\]|#]+)(?:\|[^\]]+)?\]\]", content):
+        slug = match.group(1).strip()
+        if slug and slug not in existing_slugs:
+            broken.append(slug)
+    return list(set(broken))
