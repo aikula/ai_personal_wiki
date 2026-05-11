@@ -27,7 +27,8 @@
     }
 
     body { background: var(--bg); color: var(--text);
-           font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
+           font-family: 'Inter', system-ui, -apple-system, sans-serif; overflow: hidden;
+           font-size: 14px; -webkit-font-smoothing: antialiased; }
 
     /* ── Layout ─────────────────────────────── */
     #root { display: flex; flex-direction: column; height: 100vh; }
@@ -35,19 +36,20 @@
     .header {
       height: var(--header-h); background: var(--surface);
       border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; padding: 0 16px; gap: 12px;
+      display: flex; align-items: center; padding: 0 18px; gap: 14px;
       flex-shrink: 0; z-index: 10;
+      box-shadow: 0 1px 3px rgba(0,0,0,.04);
     }
-    .header h1 { font-size: 16px; font-weight: 600; color: var(--accent); }
+    .header h1 { font-size: 17px; font-weight: 700; color: var(--accent); }
     .header .spacer { flex: 1; }
     .header-btn {
       background: var(--surface2); border: 1px solid var(--border);
-      color: var(--text-dim); border-radius: 6px;
-      padding: 5px 12px; font-size: 13px; cursor: pointer;
-      transition: all .15s;
+      color: var(--text-dim); border-radius: 8px;
+      padding: 6px 14px; font-size: 13px; cursor: pointer;
+      transition: all .15s; font-weight: 500;
     }
-    .header-btn:hover { color: var(--text); border-color: var(--accent); }
-    .header-btn.danger:hover { border-color: var(--red); color: var(--red); }
+    .header-btn:hover { color: var(--text); border-color: var(--accent); background: rgba(37,99,235,.06); }
+    .header-btn.danger:hover { border-color: var(--red); color: var(--red); background: rgba(220,38,38,.06); }
 
     .main-area { display: flex; flex: 1; overflow: hidden; }
 
@@ -56,34 +58,39 @@
       background: var(--surface); border-right: 1px solid var(--border);
       display: flex; flex-direction: column; flex-shrink: 0;
       transition: width .2s ease; overflow: hidden;
+      box-shadow: 1px 0 3px rgba(0,0,0,.02);
     }
-    .panel.right { border-right: none; border-left: 1px solid var(--border); }
+    .panel.right { border-right: none; border-left: 1px solid var(--border); box-shadow: -1px 0 3px rgba(0,0,0,.02); }
     .panel.collapsed { width: 0 !important; }
     .panel-header {
-      padding: 12px 14px; font-size: 12px; font-weight: 600;
+      padding: 14px 16px; font-size: 12px; font-weight: 600;
       color: var(--text-dim); text-transform: uppercase; letter-spacing: .06em;
       border-bottom: 1px solid var(--border); flex-shrink: 0;
       display: flex; align-items: center; gap: 8px;
+      background: var(--surface);
     }
     .panel-header span { flex: 1; }
-    .panel-body { flex: 1; overflow-y: auto; padding: 8px 0; }
-    .panel-body::-webkit-scrollbar { width: 4px; }
-    .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .panel-body { flex: 1; overflow-y: auto; padding: 10px 0; }
+    .panel-body::-webkit-scrollbar { width: 5px; }
+    .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .panel-body::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 
     /* ── Sessions list ───────────────────────── */
     .session-item {
-      padding: 9px 14px; cursor: pointer; border-radius: 6px; margin: 2px 6px;
+      padding: 10px 14px; cursor: pointer; border-radius: 8px; margin: 2px 8px;
       font-size: 13px; color: var(--text-dim); transition: all .1s;
-      display: flex; flex-direction: column; gap: 2px;
+      display: flex; flex-direction: column; gap: 3px;
     }
     .session-item:hover, .session-item.active { background: var(--surface2); color: var(--text); }
-    .session-item .s-title { font-size: 12px; white-space: nowrap;
+    .session-item.active { border-left: 3px solid var(--accent); }
+    .session-item .s-title { font-size: 13px; white-space: nowrap;
                               overflow: hidden; text-overflow: ellipsis; }
     .session-item .s-meta { font-size: 11px; color: var(--text-dim); }
     .btn-new-session {
-      margin: 8px; padding: 8px; border-radius: 6px;
+      margin: 8px; padding: 10px; border-radius: 8px;
       background: var(--accent); color: #fff; border: none;
-      font-size: 13px; font-weight: 500; cursor: pointer; width: calc(100% - 16px);
+      font-size: 13px; font-weight: 600; cursor: pointer; width: calc(100% - 16px);
+      transition: opacity .15s; box-shadow: 0 1px 3px rgba(37,99,235,.2);
     }
     .btn-new-session:hover { opacity: .9; }
 
@@ -91,37 +98,39 @@
     .chat-area {
       flex: 1; display: flex; flex-direction: column; min-width: 0;
     }
-    .messages { flex: 1; overflow-y: auto; padding: 20px; display: flex;
-                flex-direction: column; gap: 16px; }
-    .messages::-webkit-scrollbar { width: 4px; }
-    .messages::-webkit-scrollbar-thumb { background: var(--border); }
+    .messages { flex: 1; overflow-y: auto; padding: 24px; display: flex;
+                flex-direction: column; gap: 18px; }
+    .messages::-webkit-scrollbar { width: 5px; }
+    .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .messages::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 
     .msg { display: flex; gap: 10px; max-width: 820px; }
     .msg.user { align-self: flex-end; flex-direction: row-reverse; }
     .msg-bubble {
-      background: var(--surface2); border: 1px solid var(--border);
-      border-radius: 12px; padding: 12px 16px;
-      font-size: 14px; line-height: 1.6; max-width: 680px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px 18px;
+      font-size: 14px; line-height: 1.65; max-width: 680px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.04);
     }
     .msg.user .msg-bubble { background: var(--accent); border-color: var(--accent);
                               color: #fff; border-radius: 12px 4px 12px 12px; }
     .msg.assistant .msg-bubble { border-radius: 4px 12px 12px 12px; }
     .msg-bubble p { margin-bottom: 8px; }
     .msg-bubble p:last-child { margin-bottom: 0; }
-    .msg-bubble code { background: rgba(0,0,0,.07); padding: 1px 5px;
-                         border-radius: 4px; font-size: 12px; color: var(--text); }
-    .msg-bubble pre { background: var(--surface2); padding: 12px; border-radius: 8px;
-                       overflow-x: auto; font-size: 12px; border: 1px solid var(--border); }
-    .msg-bubble table { border-collapse: collapse; width: 100%; margin: 8px 0;
+    .msg-bubble code { background: rgba(0,0,0,.06); padding: 2px 6px;
+                          border-radius: 4px; font-size: 13px; color: var(--text); }
+    .msg-bubble pre { background: var(--surface2); padding: 14px; border-radius: 8px;
+                        overflow-x: auto; font-size: 13px; border: 1px solid var(--border); }
+    .msg-bubble table { border-collapse: collapse; width: 100%; margin: 10px 0;
                          font-size: 13px; }
-    .msg-bubble td, .msg-bubble th { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+    .msg-bubble td, .msg-bubble th { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
     .msg-bubble th { background: var(--surface2); }
 
     /* wikilinks in answers */
     .wikilink {
       color: var(--accent); text-decoration: none; font-weight: 500;
-      padding: 0 2px; border-radius: 3px; border-bottom: 1px solid var(--accent);
-      cursor: pointer;
+      padding: 1px 4px; border-radius: 4px; border-bottom: 1px solid var(--accent);
+      cursor: pointer; transition: all .15s;
     }
     .wikilink:hover { background: rgba(37,99,235,.08); }
 
@@ -129,16 +138,21 @@
     .provenance { font-size: 0.75em; vertical-align: super; }
     .provenance a {
       color: var(--text-dim); text-decoration: none; border-bottom: 1px dotted var(--text-dim);
+      transition: color .15s;
     }
     .provenance a:hover { color: var(--accent); border-bottom-color: var(--accent); }
 
-    .msg-meta { font-size: 11px; color: var(--text-dim); margin-top: 6px;
-                 display: flex; gap: 8px; flex-wrap: wrap; }
+    .msg-meta { font-size: 11px; color: var(--text-dim); margin-top: 8px;
+                 display: flex; gap: 6px; flex-wrap: wrap; }
     .msg-meta .tag { background: var(--surface); border: 1px solid var(--border);
-                      border-radius: 3px; padding: 1px 6px; }
+                      border-radius: 12px; padding: 3px 10px; font-size: 12px;
+                      cursor: pointer; transition: all .15s;
+                      box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+    .msg-meta .tag:hover { border-color: var(--accent); color: var(--accent); background: rgba(37,99,235,.06); }
 
-    .typing-indicator { display: flex; gap: 4px; padding: 12px 16px; }
-    .typing-dot { width: 6px; height: 6px; background: var(--text-dim);
+    .typing-indicator { display: flex; gap: 4px; padding: 14px 18px; }
+    .typing-dot { width: 7px; height: 7px; background: var(--text-dim);
                    border-radius: 50%; animation: bounce .8s infinite; }
     .typing-dot:nth-child(2) { animation-delay: .15s; }
     .typing-dot:nth-child(3) { animation-delay: .3s; }
@@ -147,31 +161,36 @@
 
     /* ── Input bar ───────────────────────────── */
     .input-bar {
-      padding: 12px 16px; border-top: 1px solid var(--border);
-      display: flex; gap: 8px; align-items: flex-end;
+      padding: 14px 18px; border-top: 1px solid var(--border);
+      display: flex; gap: 10px; align-items: flex-end;
       background: var(--surface); flex-shrink: 0;
     }
     .input-wrap { flex: 1; position: relative; }
     textarea.chat-input {
       width: 100%; background: var(--surface2); border: 1px solid var(--border);
-      color: var(--text); border-radius: 10px; padding: 10px 14px;
+      color: var(--text); border-radius: 12px; padding: 12px 16px;
       font-size: 14px; resize: none; outline: none; line-height: 1.5;
-      max-height: 160px; min-height: 42px; font-family: inherit;
+      max-height: 160px; min-height: 44px; font-family: inherit;
+      transition: border-color .15s, box-shadow .15s;
     }
-    textarea.chat-input:focus { border-color: var(--accent); }
+    textarea.chat-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
     .project-badge {
       position: absolute; right: 10px; bottom: 10px;
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: 4px; padding: 2px 7px; font-size: 11px; color: var(--text-dim);
-      cursor: pointer;
+      border-radius: 12px; padding: 3px 8px; font-size: 11px; color: var(--text-dim);
+      cursor: pointer; transition: all .15s;
     }
+    .project-badge:hover { border-color: var(--accent); color: var(--accent); }
+    .project-badge.active { background: var(--accent); color: #fff; border-color: var(--accent); }
     .send-btn {
       background: var(--accent); color: #fff; border: none;
-      border-radius: 10px; width: 42px; height: 42px; cursor: pointer;
+      border-radius: 12px; width: 44px; height: 44px; cursor: pointer;
       font-size: 18px; display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0; transition: opacity .15s;
+      flex-shrink: 0; transition: all .15s;
+      box-shadow: 0 1px 3px rgba(37,99,235,.2);
     }
-    .send-btn:disabled { opacity: .4; cursor: default; }
+    .send-btn:hover { box-shadow: 0 2px 6px rgba(37,99,235,.3); }
+    .send-btn:disabled { opacity: .4; cursor: default; box-shadow: none; }
 
     /* ── Wiki tree panel ─────────────────────── */
     .wiki-tree { padding: 8px 8px; }
@@ -179,78 +198,85 @@
     .project-label {
       font-size: 11px; font-weight: 700; color: var(--accent2);
       text-transform: uppercase; letter-spacing: .06em;
-      padding: 4px 6px; margin-bottom: 4px;
+      padding: 6px 8px; margin-bottom: 4px;
     }
     .wiki-item {
-      display: flex; align-items: center; gap: 6px;
-      padding: 5px 8px; border-radius: 5px; cursor: pointer;
-      font-size: 12px; color: var(--text-dim); transition: all .1s;
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; border-radius: 6px; cursor: pointer;
+      font-size: 13px; color: var(--text-dim); transition: all .1s;
+      margin: 1px 6px;
     }
     .wiki-item:hover { background: var(--surface2); color: var(--text); }
-    .wiki-item.active { background: var(--surface2); color: var(--accent); }
+    .wiki-item.active { background: rgba(37,99,235,.08); color: var(--accent); font-weight: 500; }
     .wiki-item .item-type { font-size: 10px; color: var(--text-dim);
-                             background: var(--surface2); border-radius: 3px;
-                             padding: 1px 4px; }
+                             background: var(--surface2); border-radius: 4px;
+                             padding: 2px 5px; }
     .wiki-item .item-conf { margin-left: auto; font-size: 10px;
-                             color: var(--text-dim); }
+                             color: var(--text-dim); font-weight: 600; }
     .conf-high { color: var(--green) !important; }
     .conf-mid  { color: var(--yellow) !important; }
     .conf-low  { color: var(--red) !important; }
+
+    /* ── Empty states ───────────────────────── */
+    .empty-state {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; padding: 40px 20px; text-align: center;
+      color: var(--text-dim);
+    }
+    .empty-state .icon { font-size: 32px; margin-bottom: 12px; }
+    .empty-state .title { font-size: 14px; color: var(--text); margin-bottom: 4px; }
+    .empty-state .desc { font-size: 13px; }
     .wiki-search-input {
       width: 100%; background: var(--surface2); border: 1px solid var(--border);
-      color: var(--text); border-radius: 6px; padding: 7px 10px;
-      font-size: 12px; outline: none; margin: 8px 8px 4px;
-      width: calc(100% - 16px);
+      color: var(--text); border-radius: 8px; padding: 8px 12px;
+      font-size: 13px; outline: none; margin: 8px 8px 6px;
+      width: calc(100% - 16px); transition: border-color .15s, box-shadow .15s;
     }
-    .wiki-search-input:focus { border-color: var(--accent); }
+    .wiki-search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
 
     /* ── Page viewer (right panel bottom) ───── */
     .page-viewer {
       border-top: 1px solid var(--border); flex: 1;
-      overflow-y: auto; padding: 14px;
+      overflow-y: auto; padding: 16px;
     }
-    .page-viewer::-webkit-scrollbar { width: 4px; }
-    .page-viewer::-webkit-scrollbar-thumb { background: var(--border); }
-    .page-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
-    .page-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
-    .page-tag { font-size: 10px; background: var(--surface2);
-                 border: 1px solid var(--border); border-radius: 3px; padding: 2px 6px; }
-    .page-content { font-size: 13px; line-height: 1.6; color: var(--text-dim); }
-    .page-content h1,h2,h3 { color: var(--text); margin: 10px 0 5px; }
-    .page-content h2 { font-size: 14px; }
-    .page-content h3 { font-size: 13px; }
-    .page-content p { margin-bottom: 8px; }
-    .page-content code { background: rgba(0,0,0,.06); padding: 1px 4px;
-                          border-radius: 3px; font-size: 12px; }
-    .page-synopsis {
-      margin: 8px 0 12px; padding: 10px 14px;
-      background: var(--surface2); border-radius: 6px;
-      font-size: 13px; color: var(--text-dim); line-height: 1.5;
-      border-left: 3px solid var(--accent);
-    }
-    .page-content pre { background: var(--surface2); padding: 10px;
-                          border-radius: 6px; overflow-x: auto; margin: 6px 0;
-                          border: 1px solid var(--border); }
+    .page-viewer::-webkit-scrollbar { width: 5px; }
+    .page-viewer::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .page-viewer::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+    .page-title { font-size: 17px; font-weight: 700; margin-bottom: 8px; color: var(--text); }
+    .page-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+    .page-tag { font-size: 11px; background: var(--surface2);
+                 border: 1px solid var(--border); border-radius: 12px; padding: 3px 8px; }
+    .page-content { font-size: 14px; line-height: 1.7; color: var(--text); }
+    .page-content h1,h2,h3 { color: var(--text); margin: 12px 0 6px; }
+    .page-content h2 { font-size: 15px; }
+    .page-content h3 { font-size: 14px; }
+    .page-content p { margin-bottom: 10px; }
+    .page-content code { background: rgba(0,0,0,.06); padding: 2px 6px;
+                          border-radius: 4px; font-size: 13px; }
+    .page-content pre { background: var(--surface2); padding: 12px;
+                          border-radius: 8px; overflow-x: auto; margin: 8px 0;
+                          border: 1px solid var(--border); font-size: 13px; }
     .page-content table { width: 100%; border-collapse: collapse;
-                           font-size: 12px; margin: 6px 0; }
+                           font-size: 13px; margin: 8px 0; }
     .page-content th, .page-content td { border: 1px solid var(--border);
-                                          padding: 4px 8px; }
+                                           padding: 6px 10px; }
     .superseded-banner {
-      background: rgba(248,113,113,.1); border: 1px solid var(--red);
-      border-radius: 6px; padding: 8px 12px; margin-bottom: 10px;
-      font-size: 12px; color: var(--red);
+      background: rgba(248,113,113,.08); border: 1px solid var(--red);
+      border-radius: 8px; padding: 10px 14px; margin-bottom: 12px;
+      font-size: 13px; color: var(--red);
     }
 
     /* ── Conflicts tab ───────────────────────── */
     .tab-bar {
       display: flex; border-bottom: 1px solid var(--border);
-      padding: 0 16px; gap: 0; flex-shrink: 0;
+      padding: 0 12px; gap: 0; flex-shrink: 0; background: var(--surface);
     }
     .tab {
-      padding: 10px 16px; font-size: 13px; color: var(--text-dim);
+      padding: 12px 16px; font-size: 13px; color: var(--text-dim);
       cursor: pointer; border-bottom: 2px solid transparent;
-      transition: all .15s;
+      transition: all .15s; font-weight: 500;
     }
+    .tab:hover { color: var(--text); }
     .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
     .tab .badge {
       background: var(--red); color: #fff; border-radius: 10px;
@@ -258,101 +284,119 @@
     }
 
     .conflict-card {
-      background: var(--surface2); border: 1px solid var(--border);
-      border-radius: 8px; margin: 8px; padding: 12px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; margin: 8px; padding: 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.04);
+      transition: box-shadow .15s;
     }
+    .conflict-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.08); }
     .conflict-card.open { border-left: 3px solid var(--yellow); }
-    .conflict-card.resolved { border-left: 3px solid var(--green); opacity: .7; }
-    .conflict-id { font-size: 11px; color: var(--accent); font-weight: 600; }
-    .conflict-type { font-size: 11px; color: var(--text-dim); margin: 4px 0; }
+    .conflict-card.resolved { border-left: 3px solid var(--green); opacity: .85; }
+    .conflict-card.cross-project { border-left-color: var(--accent); }
+    .conflict-id { font-size: 12px; color: var(--accent); font-weight: 600; }
+    .conflict-type { font-size: 12px; color: var(--text-dim); margin: 4px 0; }
+    .conflict-id { font-size: 12px; color: var(--accent); font-weight: 600; }
+    .conflict-type { font-size: 12px; color: var(--text-dim); margin: 4px 0; }
     .conflict-ctx {
-      background: var(--bg); border-radius: 5px; padding: 8px;
-      font-size: 11px; color: var(--text-dim); margin: 6px 0;
-      font-family: monospace; white-space: pre-wrap; max-height: 80px;
-      overflow: hidden;
+      background: var(--bg); border-radius: 6px; padding: 10px;
+      font-size: 12px; color: var(--text-dim); margin: 6px 0;
+      font-family: 'SF Mono', 'Fira Code', monospace; white-space: pre-wrap; max-height: 100px;
+      overflow: hidden; border: 1px solid var(--border);
     }
-    .conflict-options { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+    .conflict-options { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
     .conflict-option {
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: 5px; padding: 6px 10px; font-size: 12px;
-      cursor: pointer; transition: all .1s;
+      border-radius: 8px; padding: 8px 12px; font-size: 13px;
+      cursor: pointer; transition: all .15s;
     }
-    .conflict-option:hover { border-color: var(--accent); color: var(--accent); }
+    .conflict-option:hover { border-color: var(--accent); color: var(--accent); background: rgba(37,99,235,.04); }
     .conflict-option.selected { border-color: var(--accent);
-                                  background: rgba(108,138,255,.1); color: var(--accent); }
+                                  background: rgba(37,99,235,.08); color: var(--accent); font-weight: 500; }
     .conflict-comment-input {
       width: 100%; background: var(--surface); border: 1px solid var(--border);
-      color: var(--text); border-radius: 5px; padding: 7px 10px;
-      font-size: 12px; outline: none; resize: none; margin-top: 6px;
-      font-family: inherit;
+      color: var(--text); border-radius: 8px; padding: 8px 12px;
+      font-size: 13px; outline: none; resize: none; margin-top: 8px;
+      font-family: inherit; transition: border-color .15s, box-shadow .15s;
     }
-    .conflict-comment-input:focus { border-color: var(--accent); }
+    .conflict-comment-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
     .btn-resolve {
-      background: var(--green); color: var(--bg); border: none;
-      border-radius: 5px; padding: 6px 14px; font-size: 12px;
-      font-weight: 600; cursor: pointer; margin-top: 6px; width: 100%;
+      background: var(--green); color: #fff; border: none;
+      border-radius: 8px; padding: 8px 16px; font-size: 13px;
+      font-weight: 600; cursor: pointer; margin-top: 8px; width: 100%;
+      transition: all .15s; box-shadow: 0 1px 3px rgba(22,163,74,.2);
     }
-    .btn-resolve:disabled { opacity: .4; cursor: default; }
+    .btn-resolve:hover { opacity: .9; }
+    .btn-resolve:disabled { opacity: .4; cursor: default; box-shadow: none; }
     .btn-comment {
       background: transparent; color: var(--text-dim);
-      border: 1px solid var(--border); border-radius: 5px;
-      padding: 5px 12px; font-size: 12px; cursor: pointer; margin-top: 4px;
-      width: 100%;
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 7px 14px; font-size: 13px; cursor: pointer; margin-top: 6px;
+      width: 100%; transition: all .15s; font-weight: 500;
     }
     .btn-comment:hover { border-color: var(--accent2); color: var(--accent2); }
 
     /* ── Upload modal ───────────────────────── */
     .modal-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,.7);
+      position: fixed; inset: 0; background: rgba(0,0,0,.5);
       display: flex; align-items: center; justify-content: center; z-index: 100;
+      backdrop-filter: blur(2px);
     }
     .modal {
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: 12px; padding: 24px; width: 460px; max-width: 95vw;
+      border-radius: 16px; padding: 28px; width: 460px; max-width: 95vw;
+      box-shadow: 0 8px 32px rgba(0,0,0,.12);
     }
-    .modal h2 { font-size: 16px; margin-bottom: 16px; }
+    .modal h2 { font-size: 18px; margin-bottom: 18px; font-weight: 700; }
     .modal label { font-size: 12px; color: var(--text-dim);
-                    display: block; margin-bottom: 5px; }
+                    display: block; margin-bottom: 6px; }
     .modal input, .modal select {
       width: 100%; background: var(--surface2); border: 1px solid var(--border);
-      color: var(--text); border-radius: 6px; padding: 8px 12px;
-      font-size: 13px; outline: none; margin-bottom: 12px;
+      color: var(--text); border-radius: 8px; padding: 9px 14px;
+      font-size: 13px; outline: none; margin-bottom: 14px;
+      transition: border-color .15s, box-shadow .15s;
     }
-    .modal input:focus, .modal select:focus { border-color: var(--accent); }
+    .modal input:focus, .modal select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
     .dropzone {
-      border: 2px dashed var(--border); border-radius: 8px; padding: 24px;
+      border: 2px dashed var(--border); border-radius: 12px; padding: 28px;
       text-align: center; color: var(--text-dim); font-size: 13px;
       cursor: pointer; transition: all .15s; margin-bottom: 12px;
     }
     .dropzone:hover, .dropzone.drag-over { border-color: var(--accent);
-                                             color: var(--accent); }
+                                             color: var(--accent); background: rgba(37,99,235,.03); }
     .file-list { display: flex; flex-direction: column; gap: 4px;
                   margin-bottom: 12px; max-height: 140px; overflow-y: auto; }
     .file-item { display: flex; align-items: center; gap: 8px;
-                  background: var(--surface2); border-radius: 5px;
-                  padding: 6px 10px; font-size: 12px; }
+                  background: var(--surface2); border-radius: 8px;
+                  padding: 8px 12px; font-size: 13px; }
     .file-item .fname { flex: 1; color: var(--text); }
     .file-item .fsize { color: var(--text-dim); }
     .file-item .fremove { color: var(--red); cursor: pointer; }
     .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
     .btn-cancel { background: var(--surface2); border: 1px solid var(--border);
-                   color: var(--text-dim); border-radius: 6px; padding: 8px 16px;
-                   font-size: 13px; cursor: pointer; }
+                   color: var(--text-dim); border-radius: 8px; padding: 9px 18px;
+                   font-size: 13px; cursor: pointer; font-weight: 500;
+                   transition: all .15s;
+    }
+    .btn-cancel:hover { border-color: var(--text-dim); color: var(--text); }
     .btn-primary { background: var(--accent); color: #fff; border: none;
-                    border-radius: 6px; padding: 8px 20px; font-size: 13px;
-                    font-weight: 600; cursor: pointer; }
-    .btn-primary:disabled { opacity: .4; cursor: default; }
+                    border-radius: 8px; padding: 9px 22px; font-size: 13px;
+                    font-weight: 600; cursor: pointer; transition: all .15s;
+                    box-shadow: 0 1px 3px rgba(37,99,235,.2);
+    }
+    .btn-primary:hover { opacity: .9; box-shadow: 0 2px 6px rgba(37,99,235,.3); }
+    .btn-primary:disabled { opacity: .4; cursor: default; box-shadow: none; }
     .upload-progress { margin-top: 10px; font-size: 12px; color: var(--text-dim); }
-    .progress-bar { height: 4px; background: var(--border); border-radius: 2px;
-                     margin-top: 6px; overflow: hidden; }
+    .progress-bar { height: 6px; background: var(--border); border-radius: 3px;
+                     margin-top: 8px; overflow: hidden; }
     .progress-fill { height: 100%; background: var(--accent);
-                      transition: width .3s; border-radius: 2px; }
+                      transition: width .3s; border-radius: 3px; }
 
     /* ── Rebuild modal ───────────────────────── */
     .rebuild-log {
-      background: var(--bg); border-radius: 8px; padding: 12px;
-      font-family: monospace; font-size: 12px; height: 200px;
-      overflow-y: auto; color: var(--text-dim); margin-top: 12px;
+      background: var(--bg); border-radius: 10px; padding: 14px;
+      font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; height: 220px;
+      overflow-y: auto; color: var(--text-dim); margin-top: 14px;
+      border: 1px solid var(--border);
     }
     .rebuild-log .ok   { color: var(--green); }
     .rebuild-log .err  { color: var(--red); }
@@ -363,8 +407,9 @@
                display: flex; flex-direction: column; gap: 8px; z-index: 200; }
     .toast {
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: 8px; padding: 10px 16px; font-size: 13px;
-      max-width: 320px; animation: slide-in .2s ease;
+      border-radius: 10px; padding: 12px 18px; font-size: 13px;
+      max-width: 340px; animation: slide-in .2s ease;
+      box-shadow: 0 4px 12px rgba(0,0,0,.08);
     }
     .toast.success { border-left: 3px solid var(--green); }
     .toast.error   { border-left: 3px solid var(--red); }
@@ -372,8 +417,10 @@
     @keyframes slide-in { from { transform: translateX(20px); opacity:0; }
                            to   { transform: translateX(0);   opacity:1; } }
     .icon-btn { background: none; border: none; cursor: pointer;
-                 color: var(--text-dim); font-size: 16px; padding: 4px; }
-    .icon-btn:hover { color: var(--text); }
+                 color: var(--text-dim); font-size: 16px; padding: 6px;
+                 border-radius: 6px; transition: all .15s;
+    }
+    .icon-btn:hover { color: var(--text); background: var(--surface2); }
   </style>
 </head>
 <body>
@@ -593,8 +640,15 @@ function UploadModal({ onClose, onDone }) {
             <div className="progress-bar">
               <div className="progress-fill"
                    style={{width: `${progress[1] ? (progress[0]/progress[1]*100) : 0}%`}} />
-            </div>
-          </div>
+      </div>
+      {detailConflict && (
+        <ConflictDetailModal
+          conflict={detailConflict}
+          onClose={() => setDetailConflict(null)}
+          onResolved={() => { setData(d => ({...d, open: d.open.filter(c => c.id !== detailConflict.id)})); }}
+        />
+      )}
+    </div>
         )}
         <div className="modal-actions">
           <button className="btn-cancel" onClick={onClose}>Отмена</button>
@@ -766,6 +820,177 @@ function ClearModal({ onClose, onRefresh }) {
 }
 
 // ─────────────────────────────────────────────
+// Conflict Detail Modal — guided resolution flow
+// ─────────────────────────────────────────────
+function ConflictDetailModal({ conflict, onClose, onResolved }) {
+  const toast = React.useContext(ToastCtx);
+  const [step, setStep] = useState(1);
+  const [choice, setChoice] = useState('');
+  const [comment, setComment] = useState('');
+  const [skillRule, setSkillRule] = useState('');
+  const [skillSection, setSkillSection] = useState('Conflict Resolution Patterns');
+  const [resolving, setResolving] = useState(false);
+
+  if (!conflict) return null;
+
+  const c = conflict;
+  const choices = [
+    { value: 'trust_wiki', label: 'Доверить wiki', desc: 'Текущая wiki-страница верна, источник устарел или неверен' },
+    { value: 'trust_source', label: 'Доверить источнику', desc: 'Новый источник точнее, wiki нужно обновить' },
+    { value: 'both_true', label: 'Оба верны в разных контекстах', desc: 'Разные проекты, фазы или условия — не настоящий конфликт' },
+    { value: 'needs_followup', label: 'Требует уточнения', desc: 'Недостаточно информации для решения' },
+    { value: 'ignore', label: 'Игнорировать', desc: 'Не является реальным конфликтом' },
+  ];
+
+  const sections = [
+    'Source Trust Rules', 'Conflict Resolution Patterns', 'Domain Conventions',
+    'Query Formatting Rules', 'Ingest Patterns',
+  ];
+
+  const handleResolve = async () => {
+    if (!choice) { toast('Выберите вариант решения', 'error'); return; }
+    setResolving(true);
+    try {
+      const choiceText = choices.find(ch => ch.value === choice)?.label || choice;
+      await api.post(`/conflicts/${c.id}/resolve`, {
+        resolution: choiceText,
+        user_comment: comment,
+        extract_skill: !!skillRule.trim(),
+      });
+      if (skillRule.trim()) {
+        await api.post(`/conflicts/${c.id}/skill`, {
+          section: skillSection,
+          rule: skillRule.trim(),
+        });
+      }
+      toast('Конфликт решён', 'success');
+      onResolved?.();
+      onClose();
+    } catch(e) {
+      toast(`Ошибка: ${e.message}`, 'error');
+    } finally {
+      setResolving(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target===e.currentTarget && onClose()}>
+      <div className="modal" style={{width:640, maxWidth:'95vw', maxHeight:'90vh', overflowY:'auto'}}>
+        <h2>🔍 {c.id} — {c.conflict_type}</h2>
+        <div style={{fontSize:12, color:'var(--text-dim)', marginBottom:16}}>
+          Проект: {c.project} · Источник: {c.source_file} · {c.date}
+        </div>
+
+        {/* Step indicators */}
+        <div style={{display:'flex', gap:8, marginBottom:20}}>
+          {[1,2,3,4].map(s => (
+            <div key={s} style={{
+              flex:1, height:4, borderRadius:2,
+              background: s <= step ? 'var(--accent)' : 'var(--border)',
+              transition: 'background .2s',
+            }} />
+          ))}
+        </div>
+
+        {step === 1 && (
+          <>
+            <h3 style={{fontSize:14, marginBottom:12}}>Суть конфликта</h3>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16}}>
+              <div style={{background:'rgba(100,149,237,0.06)', borderLeft:'3px solid var(--accent)', padding:12, borderRadius:8}}>
+                <div style={{fontSize:11, fontWeight:600, color:'var(--accent)', marginBottom:6}}>📄 Текущая wiki</div>
+                <div style={{fontSize:12, color:'var(--text)', lineHeight:1.5, whiteSpace:'pre-wrap'}}>{c.context_a}</div>
+              </div>
+              <div style={{background:'rgba(255,100,100,0.06)', borderLeft:'3px solid var(--red)', padding:12, borderRadius:8}}>
+                <div style={{fontSize:11, fontWeight:600, color:'var(--red)', marginBottom:6}}>📥 Новый источник</div>
+                <div style={{fontSize:12, color:'var(--text)', lineHeight:1.5, whiteSpace:'pre-wrap'}}>{c.context_b}</div>
+              </div>
+            </div>
+            {c.description && (
+              <div style={{background:'var(--surface2)', borderRadius:8, padding:12, marginBottom:16, fontSize:13}}>
+                <strong>Описание:</strong> {c.description}
+              </div>
+            )}
+            <div className="modal-actions">
+              <button className="btn-cancel" onClick={onClose}>Закрыть</button>
+              <button className="btn-primary" onClick={() => setStep(2)}>Далее →</button>
+            </div>
+          </>
+        )}
+
+        {step === 2 && (
+          <>
+            <h3 style={{fontSize:14, marginBottom:12}}>Выберите решение</h3>
+            <div style={{display:'flex', flexDirection:'column', gap:8, marginBottom:16}}>
+              {choices.map(ch => (
+                <div key={ch.value}
+                  onClick={() => setChoice(ch.value)}
+                  style={{
+                    background: choice === ch.value ? 'rgba(37,99,235,0.08)' : 'var(--surface2)',
+                    border: choice === ch.value ? '2px solid var(--accent)' : '1px solid var(--border)',
+                    borderRadius:8, padding:12, cursor:'pointer', transition:'all .15s',
+                  }}>
+                  <div style={{fontSize:13, fontWeight:600, color: choice === ch.value ? 'var(--accent)' : 'var(--text)'}}>
+                    {ch.label}
+                  </div>
+                  <div style={{fontSize:12, color:'var(--text-dim)', marginTop:2}}>{ch.desc}</div>
+                </div>
+              ))}
+            </div>
+            <div className="modal-actions">
+              <button className="btn-cancel" onClick={() => setStep(1)}>← Назад</button>
+              <button className="btn-primary" onClick={() => setStep(3)} disabled={!choice}>Далее →</button>
+            </div>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <h3 style={{fontSize:14, marginBottom:12}}>Навык (правило)</h3>
+            <p style={{fontSize:12, color:'var(--text-dim)', marginBottom:12}}>
+              Извлечённое правило будет добавлено в skills.md и использоваться при будущем анализе.
+            </p>
+            <label style={{fontSize:12, color:'var(--text-dim)', display:'block', marginBottom:4}}>Раздел</label>
+            <select value={skillSection} onChange={e => setSkillSection(e.target.value)}
+              style={{width:'100%', padding:8, marginBottom:12, borderRadius:6, border:'1px solid var(--border)', background:'var(--surface2)'}}>
+              {sections.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <label style={{fontSize:12, color:'var(--text-dim)', display:'block', marginBottom:4}}>Правило (оставьте пустым, чтобы не сохранять)</label>
+            <textarea value={skillRule} onChange={e => setSkillRule(e.target.value)}
+              rows={3} placeholder="Например: Для проекта X: Redis и PostgreSQL — разные роли, не конфликт"
+              style={{width:'100%', padding:10, borderRadius:8, border:'1px solid var(--border)', background:'var(--surface2)', fontSize:13, fontFamily:'inherit', resize:'vertical'}} />
+            <div className="modal-actions" style={{marginTop:12}}>
+              <button className="btn-cancel" onClick={() => setStep(2)}>← Назад</button>
+              <button className="btn-primary" onClick={() => setStep(4)}>Далее →</button>
+            </div>
+          </>
+        )}
+
+        {step === 4 && (
+          <>
+            <h3 style={{fontSize:14, marginBottom:12}}>Подтверждение</h3>
+            <div style={{background:'var(--surface2)', borderRadius:8, padding:14, marginBottom:16, fontSize:13, lineHeight:1.6}}>
+              <div><strong>Конфликт:</strong> {c.id}</div>
+              <div><strong>Решение:</strong> {choices.find(ch => ch.value === choice)?.label}</div>
+              {comment && <div><strong>Комментарий:</strong> {comment}</div>}
+              {skillRule && <div><strong>Навык:</strong> {skillRule}</div>}
+            </div>
+            <textarea value={comment} onChange={e => setComment(e.target.value)}
+              rows={2} placeholder="Комментарий к решению (необязательно)"
+              style={{width:'100%', padding:10, borderRadius:8, border:'1px solid var(--border)', background:'var(--surface2)', fontSize:13, fontFamily:'inherit', resize:'vertical', marginBottom:12}} />
+            <div className="modal-actions">
+              <button className="btn-cancel" onClick={() => setStep(3)}>← Назад</button>
+              <button className="btn-primary" onClick={handleResolve} disabled={resolving}>
+                {resolving ? 'Решение…' : '✓ Решить и сохранить'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // Conflicts Panel
 // ─────────────────────────────────────────────
 function ConflictsPanel() {
@@ -778,6 +1003,7 @@ function ConflictsPanel() {
   const [comments, setComments] = useState({});
   const [addingComment, setAddingComment] = useState({});
   const [applying, setApplying] = useState({});
+  const [detailConflict, setDetailConflict] = useState(null);
 
   const load = async () => {
     try { setData(await api.get('/conflicts')); } catch {}
@@ -864,7 +1090,8 @@ function ConflictsPanel() {
           </div>
         )}
         {displayList.map(c => (
-          <div key={c.id} className={`conflict-card ${c.status.toLowerCase()} ${c.is_cross_project ? 'cross-project' : ''}`}>
+          <div key={c.id} className={`conflict-card ${c.status.toLowerCase()} ${c.is_cross_project ? 'cross-project' : ''}`}
+               onClick={() => setDetailConflict(c)} style={{cursor:'pointer'}}>
             <div className="conflict-id">{c.id} {c.is_cross_project && <span style={{fontSize:10, color:'var(--blue)', marginLeft:6}}>🔀 кросс-проект</span>}</div>
             <div className="conflict-type">
               {c.conflict_type} · {c.project} · {c.date}
