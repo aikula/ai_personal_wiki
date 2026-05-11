@@ -104,6 +104,30 @@ def validate_slug(slug: str) -> None:
             raise ValueError(f"Slug {slug!r} содержит пустой сегмент")
 
 
+def is_safe_slug(slug: str) -> bool:
+    """Return True if slug passes all validation rules, False otherwise."""
+    try:
+        validate_slug(slug)
+        return True
+    except ValueError:
+        return False
+
+
+def sanitize_to_slug(text: str) -> str:
+    """Convert arbitrary text into a safe wiki slug.
+
+    - lowercase
+    - replace non-alphanumeric chars (except - and _) with hyphens
+    - collapse multiple hyphens
+    - strip leading/trailing hyphens and slashes
+    """
+    text = text.lower().strip()
+    text = re.sub(r"[^a-z0-9/_-]", "-", text)
+    text = re.sub(r"-{2,}", "-", text)
+    text = text.strip("/-")
+    return text or "untitled"
+
+
 def validate_project_name(project: str) -> None:
     """Validate project folder name used under raw/ and wiki/."""
     if not project:

@@ -1295,8 +1295,10 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
                 raw=raw,
                 char_count=len(raw),
             )
+        except FileNotFoundError:
+            return None
         except Exception as exc:
-            logger.warning("Parse error: slug=%s path=%s error=%s", slug, path, exc)
+            logger.error("Page parse error: slug=%s path=%s error=%s", slug, path, exc)
             return None
 
     def _char_limit_for_type(self, page_type: str) -> int:
@@ -1309,7 +1311,12 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         return mapping.get(page_type, self.limits.entity_page_chars)
 
     def _update_index_entry(self, slug: str, meta: dict) -> None:
-        """Rebuild index.md statistics line. Skips if deferring (batch/rebuild)."""
+        """Rebuild index.md statistics line. Skips if deferring (batch/rebuild).
+
+        TODO: During bulk rebuild, this still calls list_pages() on every write
+        when _defer_index is False. Consider deferring all index updates during
+        ingest and rebuilding once at the end.
+        """
         if self._defer_index:
             return
         pages = self.list_pages()
