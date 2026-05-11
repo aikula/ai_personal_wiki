@@ -663,6 +663,61 @@ function RebuildModal({ onClose, onRefresh }) {
 }
 
 // ─────────────────────────────────────────────
+// Clear Modal
+// ─────────────────────────────────────────────
+function ClearModal({ onClose, onRefresh }) {
+  const toast = React.useContext(ToastCtx);
+  const [running, setRunning] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const handleClear = async () => {
+    setRunning(true);
+    try {
+      const r = await fetch('/api/ingest/clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: true }),
+      });
+      if (!r.ok) {
+        const err = await r.json();
+        throw new Error(err.detail || `Ошибка: ${r.status}`);
+      }
+      const data = await r.json();
+      toast(data.message, 'success');
+      setDone(true);
+      if (onRefresh) onRefresh();
+    } catch(e) {
+      toast(`Ошибка: ${e.message}`, 'error');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target===e.currentTarget && !running && onClose()}>
+      <div className="modal">
+        <h2>🗑️ Очистка Wiki</h2>
+        <p style={{fontSize:13, color:'var(--red)', marginBottom:12}}>
+          ⚠️ Это УДАЛИТ все wiki-страницы, конфликты, навыки и черновики.
+          Исходные файлы (raw/) будут сохранены.
+        </p>
+        <p style={{fontSize:13, color:'var(--gray)', marginBottom:16}}>
+          Вики будет возвращена в исходное пустое состояние. Для восстановления контента потребуется повторная загрузка документов.
+        </p>
+        <div className="modal-actions">
+          <button className="btn-cancel" onClick={onClose} disabled={running}>Отмена</button>
+          <button className="btn-primary danger" onClick={handleClear}
+                  disabled={running || done}
+                  style={{background: done ? 'var(--green)' : 'var(--red)'}}>
+            {running ? 'Очистка…' : done ? 'Очищено ✓' : 'Очистить вики'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // Conflicts Panel
 // ─────────────────────────────────────────────
 function ConflictsPanel() {
@@ -1189,14 +1244,17 @@ function App() {
   const [showUpload, setShowUpload] = useState(false);
   const [showRebuild, setShowRebuild] = useState(false);
 
-  // Sessions
-  const [sessions, setSessions] = useState([]);
-  const [activeSessionId, setActiveSessionId] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
+   // Sessions
+   const [sessions, setSessions] = useState([]);
+   const [activeSessionId, setActiveSessionId] = useState(null);
+   const [messages, setMessages] = useState([]);
+   const [isStreaming, setIsStreaming] = useState(false);
+   const [refreshKey, setRefreshKey] = useState(0);
 
-  const refreshWiki = useCallback(() => setRefreshKey(k => k + 1), []);
+   // Clear wiki
+   const [showClear, setShowClear] = useState(false);
+
+   const refreshWiki = useCallback(() => setRefreshKey(k => k + 1), []);
 
   // Chat input
   const [input, setInput] = useState('');
@@ -1370,6 +1428,9 @@ function App() {
         <button className="header-btn danger" onClick={() => setShowRebuild(true)}>
           🔄 Перестроить
         </button>
+        <button className="header-btn danger" onClick={() => setShowClear(true)}>
+          🗑️ Очистить
+        </button>
         <button className="icon-btn" onClick={() => setRightOpen(o => !o)} title="Переключить wiki">
           {rightOpen ? '▶' : '◀'}
         </button>
@@ -1493,6 +1554,7 @@ function App() {
         />
       )}
       {showRebuild && <RebuildModal onClose={() => setShowRebuild(false)} onRefresh={refreshWiki} />}
+      {showClear && <ClearModal onClose={() => setShowClear(false)} onRefresh={refreshWiki} />}
     </div>
   );
 }

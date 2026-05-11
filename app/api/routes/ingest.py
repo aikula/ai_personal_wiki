@@ -235,3 +235,30 @@ async def reject_draft(draft_id: str, fs: Annotated[WikiFS, Depends(get_wiki_fs)
     if fs.reject_draft(draft_id):
         return {"status": "rejected"}
     raise HTTPException(404, f"Черновик не найден: {draft_id}")
+
+
+@router.post("/clear")
+async def clear_wiki(
+    body: RebuildRequest,
+    fs: Annotated[WikiFS, Depends(get_wiki_fs)],
+):
+    """
+    Clear all wiki data and reset to initial state.
+    Requires confirm=true to prevent accidental deletion.
+    """
+    if not body.confirm:
+        raise HTTPException(400, "Необходимо установить confirm=true для очистки вики")
+    
+    # Reset wiki to initial state
+    fs.full_reset_wiki()
+    
+    # Clear all drafts
+    fs.clear_all_drafts()
+    
+    # Clear conflicts and skills (reset to initial state)
+    (fs.root / "conflicts.md").write_text("# Conflicts\n\n", encoding="utf-8")
+    (fs.root / "skills.md").write_text("# Skills\n\n", encoding="utf-8")
+    
+    logger.info("Wiki cleared to initial state")
+    
+    return {"status": "cleared", "message": "Вики очищена и возвращена в исходное состояние"}
