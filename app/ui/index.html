@@ -473,16 +473,26 @@ function ToastProvider({ children }) {
 function UploadModal({ onClose, onDone }) {
   const toast = React.useContext(ToastCtx);
   const [project, setProject] = useState('_general');
+  const [projects, setProjects] = useState([]);
+  const [newProject, setNewProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState([0, 0]);
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef();
 
+  const ALLOWED_EXTS = ['.md', '.txt', '.py', '.pdf', '.docx', '.pptx'];
+
+  // Load projects on mount
+  useEffect(() => {
+    api.get('/wiki/projects').then(r => setProjects(r.projects || [])).catch(() => {});
+  }, []);
+
   const addFiles = fs => {
-    const mds = [...fs].filter(f => f.name.endsWith('.md'));
-    if (mds.length < fs.length) toast('Принимаются только .md файлы', 'error');
-    setFiles(prev => [...prev, ...mds]);
+    const allowed = [...fs].filter(f => ALLOWED_EXTS.some(ext => f.name.toLowerCase().endsWith(ext)));
+    if (allowed.length < fs.length) toast('Неподдерживаемый формат. Допустимы: ' + ALLOWED_EXTS.join(', '), 'error');
+    setFiles(prev => [...prev, ...allowed]);
   };
 
   const handleDrop = e => {
@@ -490,8 +500,28 @@ function UploadModal({ onClose, onDone }) {
     addFiles(e.dataTransfer.files);
   };
 
+  const handleProjectChange = e => {
+    if (e.target.value === '__new__') {
+      setNewProject(true);
+      setProject('');
+    } else {
+      setNewProject(false);
+      setProject(e.target.value);
+    }
+  };
+
+  const handleNewProjectConfirm = () => {
+    const name = newProjectName.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    if (!name) { toast('Недопустимое имя проекта', 'error'); return; }
+    setProject(name);
+    setNewProject(false);
+    setProjects(prev => [...prev, { name, wiki_pages: 0, raw_files: 0 }]);
+    setNewProjectName('');
+  };
+
   const upload = async () => {
     if (!files.length) return;
+    if (!project) { toast('Выберите или создайте проект', 'error'); return; }
     setUploading(true);
     try {
       const results = await api.upload(project, files, (cur, tot) =>
@@ -509,13 +539,30 @@ function UploadModal({ onClose, onDone }) {
     }
   };
 
+  const extHint = ALLOWED_EXTS.join(', ');
+
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <h2>📂 Загрузка документов</h2>
         <label>Проект</label>
-        <input value={project} onChange={e => setProject(e.target.value)}
-               placeholder="_general или название проекта" />
+        {newProject ? (
+          <div style={{display:'flex', gap:8}}>
+            <input value={newProjectName} onChange={e => setNewProjectName(e.target.value)}
+                   placeholder="имя-нового-проекта" style={{flex:1}} />
+            <button className="btn-primary" onClick={handleNewProjectConfirm}>✓</button>
+            <button className="btn-cancel" onClick={() => setNewProject(false)}>✕</button>
+          </div>
+        ) : (
+          <select value={project} onChange={handleProjectChange} style={{width:'100%', padding:'8px'}}>
+            {(projects.length ? projects : [{name:'_general', wiki_pages:0, raw_files:0}]).map(p => (
+              <option key={p.name} value={p.name}>
+                {p.name} ({p.wiki_pages} wiki, {p.raw_files} raw)
+              </option>
+            ))}
+            <option value="__new__">+ Новый проект...</option>
+          </select>
+        )}
         <div
           className={`dropzone ${dragOver ? 'drag-over' : ''}`}
           onClick={() => inputRef.current.click()}
@@ -523,8 +570,9 @@ function UploadModal({ onClose, onDone }) {
           onDragOver={e => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
         >
-          Перетащите .md файлы сюда или нажмите для выбора
-          <input ref={inputRef} type="file" accept=".md" multiple hidden
+          Перетащите файлы сюда или нажмите для выбора
+          <br/><span style={{fontSize:11, color:'var(--gray)'}}>{extHint}</span>
+          <input ref={inputRef} type="file" accept={ALLOWED_EXTS.join(',')} multiple hidden
                  onChange={e => addFiles(e.target.files)} />
         </div>
         {files.length > 0 && (
@@ -551,7 +599,7 @@ function UploadModal({ onClose, onDone }) {
         <div className="modal-actions">
           <button className="btn-cancel" onClick={onClose}>Отмена</button>
           <button className="btn-primary" onClick={upload}
-                  disabled={!files.length || uploading}>
+                  disabled={!files.length || uploading || !project}>
             {uploading ? 'Загрузка…' : `Загрузить ${files.length} файл(ов)`}
           </button>
         </div>
@@ -728,6 +776,7 @@ function ConflictsPanel() {
   const [selections, setSelections] = useState({});
   const [comments, setComments] = useState({});
   const [addingComment, setAddingComment] = useState({});
+  const [applying, setApplying] = useState({});
 
   const load = async () => {
     try { setData(await api.get('/conflicts')); } catch {}
@@ -763,6 +812,22 @@ function ConflictsPanel() {
       setComments(c => ({...c, [id]: ''}));
     } catch(e) {
       toast(`Ошибка: ${e.message}`, 'error');
+    }
+  };
+
+  const applyUpdate = async (id) => {
+    setApplying(a => ({...a, [id]: true}));
+    try {
+      // Prepare draft first
+      await api.post(`/conflicts/${id}/prepare-update`);
+      // Then apply it
+      const res = await api.post(`/conflicts/${id}/apply-update`);
+      toast(res.message, 'success');
+      await load();
+    } catch(e) {
+      toast(`Ошибка: ${e.message}`, 'error');
+    } finally {
+      setApplying(a => ({...a, [id]: false}));
     }
   };
 
@@ -865,6 +930,12 @@ function ConflictsPanel() {
                     Навык: {c.skill_extracted}
                   </div>
                 )}
+                <button className="btn-resolve"
+                  style={{marginTop:8, fontSize:11, padding:'4px 10px'}}
+                  disabled={applying[c.id]}
+                  onClick={() => applyUpdate(c.id)}>
+                  {applying[c.id] ? 'Применение…' : '🔄 Применить к wiki'}
+                </button>
               </div>
             )}
           </div>
@@ -1258,7 +1329,19 @@ function App() {
 
   // Chat input
   const [input, setInput] = useState('');
-  const [projectFilter, setProjectFilter] = useState(null);
+  const [projectFilters, setProjectFilters] = useState([]);
+  const [availableProjects, setAvailableProjects] = useState([]);
+
+  // Load projects for filter
+  React.useEffect(() => {
+    api.get('/wiki/projects').then(r => setAvailableProjects(r.projects || [])).catch(() => {});
+  }, [refreshKey]);
+
+  const toggleProjectFilter = (name) => {
+    setProjectFilters(prev =>
+      prev.includes(name) ? prev.filter(p => p !== name) : [...prev, name]
+    );
+  };
 
   // Right panel
   const [highlightedSlug, setHighlightedSlug] = useState(null);
@@ -1335,7 +1418,7 @@ function App() {
         body: JSON.stringify({
           session_id: sessionId,
           question: q,
-          project_filter: projectFilter,
+          project_filter: projectFilters.length ? projectFilters : null,
         }),
       });
 
@@ -1522,13 +1605,21 @@ function App() {
                 onKeyDown={handleKey}
                 disabled={isStreaming}
               />
-              <span className="project-badge"
-                    onClick={() => {
-                      const p = prompt('Фильтр по проекту (пусто = все):', projectFilter || '');
-                      if (p !== null) setProjectFilter(p || null);
-                    }}>
-                {projectFilter || 'все проекты'}
-              </span>
+              <div className="project-chips" style={{display:'flex', gap:4, flexWrap:'wrap', maxWidth:200}}>
+                {availableProjects.map(p => (
+                  <span key={p.name}
+                        className={`project-badge ${projectFilters.includes(p.name) ? 'active' : ''}`}
+                        onClick={() => toggleProjectFilter(p.name)}
+                        style={{cursor:'pointer', fontSize:11, padding:'2px 6px', borderRadius:4,
+                                background: projectFilters.includes(p.name) ? 'var(--accent)' : 'var(--surface2)',
+                                color: projectFilters.includes(p.name) ? '#fff' : 'var(--text2)'}}>
+                    {p.name}
+                  </span>
+                ))}
+                {projectFilters.length === 0 && (
+                  <span className="project-badge" style={{fontSize:11, color:'var(--text2)'}}>все</span>
+                )}
+              </div>
             </div>
             <button className="send-btn" onClick={send} disabled={isStreaming || !input.trim()}>
               {isStreaming ? '⏳' : '↑'}

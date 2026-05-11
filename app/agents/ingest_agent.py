@@ -25,7 +25,7 @@ from app.agents.ingest_prompts import (
     STEP2_SYSTEM,
 )
 from app.agents.ingest_types import AnalysisResult, IngestResult
-from app.config import Settings
+from app.config import Settings, language_instruction
 from app.core.interpreter import CodeInterpreter
 from app.core.linter import WikiLinter
 from app.core.llm_client import LLMClient
@@ -143,6 +143,7 @@ class IngestAgent:
         wiki_context = self._build_wiki_context(related_pages)
         skills = self.fs.read_skills()
         agents_md = self._read_agents_md()
+        lang_rule = language_instruction(self.settings)
         prompt = STEP1_PROMPT.format(
             source_file=source_file,
             project=project,
@@ -150,6 +151,7 @@ class IngestAgent:
             wiki_context=wiki_context,
             max_pages=self.settings.ingest.max_pages_per_source,
             schema=ANALYSIS_SCHEMA_HINT,
+            language_rule=lang_rule,
         )
         raw = self.llm.call(
             system=build_system_prompt(STEP1_SYSTEM, agents_md, skills),
@@ -316,9 +318,15 @@ print(json.dumps(result))
         pattern = rf"## \[(?:OPEN|RESOLVED)\] {re.escape(conflict_id)}(.*?)(?=\n---|\Z)"
         match = re.search(pattern, conflicts_raw, re.DOTALL)
         conflict_summary = match.group(1).strip() if match else conflict_id
+        lang_rule = language_instruction(self.settings)
         raw = self.llm.call(
             system="You extract reusable rules from conflict resolutions.",
-            prompt=SKILL_EXTRACTION_PROMPT.format(conflict_summary=conflict_summary[:800], resolution=resolution, user_comment=user_comment),
+            prompt=SKILL_EXTRACTION_PROMPT.format(
+                conflict_summary=conflict_summary[:800],
+                resolution=resolution,
+                user_comment=user_comment,
+                language_rule=lang_rule,
+            ),
             temperature=0.1,
         )
         data = parse_json_response(raw, context="skill extraction")

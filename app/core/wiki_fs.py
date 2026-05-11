@@ -265,6 +265,7 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
     def list_pages(
         self,
         project: str | None = None,
+        projects: list[str] | None = None,
         page_type: str | None = None,
         tags: list[str] | None = None,
     ) -> list[WikiPage]:
@@ -281,6 +282,8 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
                 continue
             if project and page.project != project:
                 continue
+            if projects and page.project not in projects:
+                continue
             if page_type and page.page_type != page_type:
                 continue
             if tags and not all(t in page.tags for t in tags):
@@ -294,6 +297,39 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         for page in self.list_pages():
             projects.add(page.project)
         return sorted(projects)
+
+    def list_all_projects(self) -> list[dict]:
+        """
+        Return list of all projects with counts from both wiki pages and raw files.
+        Always includes _general even if empty.
+        Returns: [{"name": str, "wiki_pages": int, "raw_files": int}, ...]
+        """
+        # Collect wiki page projects
+        wiki_projects: dict[str, int] = {}
+        for page in self.list_pages():
+            wiki_projects[page.project] = wiki_projects.get(page.project, 0) + 1
+
+        # Collect raw file projects
+        raw_projects: dict[str, int] = {}
+        if self.raw_dir.exists():
+            for f in self.raw_dir.rglob("*"):
+                if f.is_file():
+                    proj = self.get_raw_project(f)
+                    raw_projects[proj] = raw_projects.get(proj, 0) + 1
+
+        # Merge
+        all_names = set(wiki_projects.keys()) | set(raw_projects.keys())
+        # Always include _general
+        all_names.add("_general")
+
+        result = []
+        for name in sorted(all_names):
+            result.append({
+                "name": name,
+                "wiki_pages": wiki_projects.get(name, 0),
+                "raw_files": raw_projects.get(name, 0),
+            })
+        return result
 
     def get_wiki_tree(self) -> dict:
         """
@@ -400,7 +436,7 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
             "pages_without_related_section_slugs": no_related,
         }
 
-    def search_pages(self, query: str, project: str | None = None) -> list[dict]:
+    def search_pages(self, query: str, project: str | None = None, projects: list[str] | None = None) -> list[dict]:
         """
         Full-text grep search across wiki pages.
         Returns list of {slug, title, excerpt, score} sorted by score desc.
@@ -409,7 +445,7 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         words = query.lower().split()
         results = []
 
-        for page in self.list_pages(project=project):
+        for page in self.list_pages(project=project, projects=projects):
             text = page.raw.lower()
             score = sum(text.count(w) for w in words)
             if score == 0:
@@ -703,7 +739,71 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         content = _inject_after_conflict_id(content, conflict_id, resolution_block)
 
         path.write_text(content, encoding="utf-8")
+        self.rebuild_index()
         return True
+
+    def prepare_conflict_resolution_draft(
+        self,
+        conflict_id: str,
+        resolution: str,
+        user_comment: str = "",
+    ) -> dict | None:
+        """
+        Create a draft update for the wiki page affected by a resolved conflict.
+        Returns draft metadata or None if conflict/page not found.
+        """
+        # Find the conflict in conflicts.md
+        conflicts_raw = self.read_conflicts_raw()
+        pattern = rf"## \[(?:OPEN|RESOLVED)\] {re.escape(conflict_id)}(.*?)(?=\n---\n## |\Z)"
+        match = re.search(pattern, conflicts_raw, re.DOTALL)
+        if not match:
+            return None
+
+        block = match.group(1)
+        # Extract page_a_slug
+        slug_match = re.search(r"Page A.*?\[\[([^\]]+)\]\]", block)
+        if not slug_match:
+            return None
+        page_a_slug = slug_match.group(1)
+
+        # Extract source context
+        context_source_match = re.search(r"Context B.*?>\s*(.+?)(?=\n\n|\n-)", block, re.DOTALL)
+        context_source = context_source_match.group(1).strip() if context_source_match else ""
+
+        # Get existing page
+        existing_page = self.read_page(page_a_slug)
+        if existing_page is None:
+            return None
+
+        # Create draft
+        draft_id = f"conflict-{conflict_id}"
+        draft_dir = self.drafts_dir / draft_id
+        draft_dir.mkdir(parents=True, exist_ok=True)
+
+        # Store conflict metadata
+        meta = {
+            "conflict_id": conflict_id,
+            "resolution": resolution,
+            "user_comment": user_comment,
+            "affected_slug": page_a_slug,
+            "source_context": context_source,
+            "existing_content": existing_page.raw,
+        }
+        (draft_dir / "meta.json").write_text(
+            json.dumps(meta, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        # Store existing page for diff
+        (draft_dir / "existing.md").write_text(existing_page.raw, encoding="utf-8")
+
+        logger.info("Conflict resolution draft created: %s for %s", draft_id, page_a_slug)
+        return {
+            "draft_id": draft_id,
+            "affected_slug": page_a_slug,
+            "resolution": resolution,
+            "source_context": context_source,
+        }
 
     def count_open_conflicts(self) -> int:
         content = self.read_conflicts_raw()
@@ -734,6 +834,7 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         else:
             new_content = "\n\n---\n\n".join(kept) + "\n"
         path.write_text(new_content, encoding="utf-8")
+        self.rebuild_index()
         logger.info("Cleared %d OPEN conflicts before rebuild", removed)
         return removed
 

@@ -42,6 +42,8 @@ Analyze the source and produce AnalysisResult JSON with:
 5. skills_triggered: which skills from skills.md influenced this analysis
 6. analysis_notes: brief summary of what you found
 
+{language_rule}
+
 Rules:
 - Max {max_pages} pages total across create+update+supersede
 - Each PlannedPage.slug format: "{project}/category/page_name"
@@ -54,9 +56,14 @@ Rules:
 - For each conflict, ALWAYS provide:
   - description: 1-2 sentence plain-language summary of what EXACTLY contradicts.
     State the specific claim from the wiki and the specific claim from the source.
-    Example: "Wiki says Redis uses allkeys-lru policy, but source states volatile-lru is configured."
+    Example (Russian): "В wiki указано, что Redis использует allkeys-lru, но в источнике сказано, что настроен volatile-lru."
+    Example (English): "Wiki says Redis uses allkeys-lru policy, but source states volatile-lru is configured."
   - context_existing: verbatim quote (up to 600 chars) of the relevant passage from the wiki page
   - context_source: verbatim quote (up to 600 chars) of the relevant passage from the source
+  - suggested_options: 2-4 short action options. Examples (Russian):
+    "Обновить страницу wiki согласно источнику",
+    "Добавить пометку о различии между pilot и production",
+    "Создать сравнительную заметку между проектами"
 
 AnalysisResult JSON schema:
 {schema}
@@ -129,6 +136,8 @@ Output JSON schema:
 
 SKILL_EXTRACTION_PROMPT = """A wiki conflict was just resolved by a user.
 Extract a reusable rule for skills.md (1-2 sentences, actionable).
+
+{language_rule}
 
 Conflict: {conflict_summary}
 Resolution chosen: {resolution}

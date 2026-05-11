@@ -117,6 +117,33 @@ class Settings:
         return settings
 
 
+def language_instruction(settings: Settings) -> str:
+    """Return a binding language rule for LLM prompts based on settings.language."""
+    lang = settings.language.lower()
+    if lang == "ru":
+        return (
+            "LANGUAGE RULE (BINDING):\n"
+            "- All user-facing JSON string fields MUST be written in Russian.\n"
+            "- This includes description, suggested_options, analysis_notes, planned page titles, and tags.\n"
+            "- Keep technical terms, product names, slugs, filenames, code, and acronyms in English.\n"
+            "- Verbatim source/context quotes MUST remain in the original source language — do NOT translate them.\n"
+        )
+    elif lang == "en":
+        return (
+            "LANGUAGE RULE (BINDING):\n"
+            "- All user-facing JSON string fields MUST be written in English.\n"
+            "- Keep technical terms, product names, slugs, filenames, code, and acronisms in their original form.\n"
+            "- Verbatim source/context quotes MUST remain in the original source language — do NOT translate them.\n"
+        )
+    else:
+        return (
+            f"LANGUAGE RULE (BINDING):\n"
+            f"- All user-facing JSON string fields MUST be written in {settings.language}.\n"
+            "- Keep technical terms, product names, slugs, filenames, code, and acronyms in English.\n"
+            "- Verbatim source/context quotes MUST remain in the original source language — do NOT translate them.\n"
+        )
+
+
 def _apply_dict(settings: Settings, data: dict) -> None:
     """Recursively apply yaml dict to settings dataclass."""
     section_map = {

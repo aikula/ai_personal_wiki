@@ -92,14 +92,23 @@ async def get_wiki_metrics(
     return fs.get_graph_metrics()
 
 
+@router.get("/projects")
+async def list_projects(
+    fs: Annotated[WikiFS, Depends(get_wiki_fs)],
+):
+    """Return list of all projects with wiki page and raw file counts."""
+    return {"projects": fs.list_all_projects()}
+
+
 @router.get("/search", response_model=WikiSearchResponse)
 async def search_wiki(
     q: str = Query(min_length=1, max_length=500),
     project: str | None = Query(default=None),
+    projects: list[str] | None = Query(default=None),
     fs: Annotated[WikiFS, Depends(get_wiki_fs)] = None,
 ):
-    """Full-text keyword search across wiki pages."""
-    results = fs.search_pages(query=q, project=project)
+    """Full-text keyword search across wiki pages with optional project filter."""
+    results = fs.search_pages(query=q, project=project, projects=projects)
     return WikiSearchResponse(results=results[:20])
 
 
