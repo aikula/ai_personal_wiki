@@ -640,15 +640,8 @@ function UploadModal({ onClose, onDone }) {
             <div className="progress-bar">
               <div className="progress-fill"
                    style={{width: `${progress[1] ? (progress[0]/progress[1]*100) : 0}%`}} />
-      </div>
-      {detailConflict && (
-        <ConflictDetailModal
-          conflict={detailConflict}
-          onClose={() => setDetailConflict(null)}
-          onResolved={() => { setData(d => ({...d, open: d.open.filter(c => c.id !== detailConflict.id)})); }}
-        />
-      )}
-    </div>
+            </div>
+          </div>
         )}
         <div className="modal-actions">
           <button className="btn-cancel" onClick={onClose}>Отмена</button>
@@ -1205,6 +1198,13 @@ function ConflictsPanel() {
           </div>
         ))}
       </div>
+      {detailConflict && (
+        <ConflictDetailModal
+          conflict={detailConflict}
+          onClose={() => setDetailConflict(null)}
+          onResolved={() => { setData(d => ({...d, open: d.open.filter(c => c.id !== detailConflict.id)})); }}
+        />
+      )}
     </div>
   );
 }
@@ -1595,6 +1595,8 @@ function App() {
   const [input, setInput] = useState('');
   const [projectFilters, setProjectFilters] = useState([]);
   const [availableProjects, setAvailableProjects] = useState([]);
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+  const projectDropdownRef = useRef();
 
   // Load projects for filter
   React.useEffect(() => {
@@ -1606,6 +1608,19 @@ function App() {
       prev.includes(name) ? prev.filter(p => p !== name) : [...prev, name]
     );
   };
+
+  const clearProjectFilters = () => setProjectFilters([]);
+
+  // Close dropdown on outside click
+  React.useEffect(() => {
+    const handler = (e) => {
+      if (projectDropdownRef.current && !projectDropdownRef.current.contains(e.target)) {
+        setShowProjectDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   // Right panel
   const [highlightedSlug, setHighlightedSlug] = useState(null);
@@ -1855,8 +1870,26 @@ function App() {
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="input-bar">
-            <div className="input-wrap">
+          <div className="input-bar" style={{flexDirection:'column', gap:6}}>
+            {projectFilters.length > 0 && (
+              <div style={{display:'flex', gap:4, flexWrap:'wrap', width:'100%'}}>
+                {projectFilters.map(p => (
+                  <span key={p} style={{
+                    display:'inline-flex', alignItems:'center', gap:4,
+                    background:'rgba(37,99,235,.1)', border:'1px solid var(--accent)',
+                    borderRadius:12, padding:'2px 8px', fontSize:11, color:'var(--accent)',
+                  }}>
+                    {p}
+                    <span style={{cursor:'pointer', fontSize:12, lineHeight:1}}
+                          onClick={() => toggleProjectFilter(p)}>✕</span>
+                  </span>
+                ))}
+                <span style={{fontSize:11, color:'var(--text-dim)', cursor:'pointer'}}
+                      onClick={clearProjectFilters}>Сбросить</span>
+              </div>
+            )}
+            <div style={{display:'flex', gap:10, alignItems:'flex-end', width:'100%'}}>
+            <div className="input-wrap" style={{flex:1}}>
               <textarea ref={textareaRef}
                 className="chat-input" rows={1}
                 placeholder="Спросите что-нибудь о вашей wiki… (Enter для отправки, Shift+Enter для новой строки)"
@@ -1869,25 +1902,73 @@ function App() {
                 onKeyDown={handleKey}
                 disabled={isStreaming}
               />
-              <div className="project-chips" style={{display:'flex', gap:4, flexWrap:'wrap', maxWidth:200}}>
-                {availableProjects.map(p => (
-                  <span key={p.name}
-                        className={`project-badge ${projectFilters.includes(p.name) ? 'active' : ''}`}
-                        onClick={() => toggleProjectFilter(p.name)}
-                        style={{cursor:'pointer', fontSize:11, padding:'2px 6px', borderRadius:4,
-                                background: projectFilters.includes(p.name) ? 'var(--accent)' : 'var(--surface2)',
-                                color: projectFilters.includes(p.name) ? '#fff' : 'var(--text2)'}}>
-                    {p.name}
-                  </span>
-                ))}
-                {projectFilters.length === 0 && (
-                  <span className="project-badge" style={{fontSize:11, color:'var(--text2)'}}>все</span>
+              <div ref={projectDropdownRef} style={{position:'absolute', right:10, bottom:42, zIndex:50}}>
+                <div className="project-badge"
+                     onClick={() => setShowProjectDropdown(v => !v)}
+                     style={{display:'flex', alignItems:'center', gap:4, maxWidth:180}}>
+                  {projectFilters.length > 0 ? (
+                    <>{projectFilters.length} проект(ов) <span style={{fontSize:10}}>▼</span></>
+                  ) : (
+                    <>все проекты <span style={{fontSize:10}}>▼</span></>
+                  )}
+                </div>
+                {showProjectDropdown && (
+                  <div style={{
+                    position:'absolute', bottom:'100%', right:0, marginBottom:4,
+                    background:'var(--surface)', border:'1px solid var(--border)',
+                    borderRadius:10, padding:8, minWidth:220,
+                    boxShadow:'0 4px 16px rgba(0,0,0,.12)',
+                  }}>
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6, paddingBottom:6, borderBottom:'1px solid var(--border)'}}>
+                      <span style={{fontSize:12, fontWeight:600, color:'var(--text)'}}>Фильтр по проекту</span>
+                      {projectFilters.length > 0 && (
+                        <span style={{fontSize:11, color:'var(--accent)', cursor:'pointer', fontWeight:500}}
+                              onClick={clearProjectFilters}>Сбросить</span>
+                      )}
+                    </div>
+                    <div style={{maxHeight:200, overflowY:'auto'}}>
+                      {availableProjects.map(p => (
+                        <div key={p.name}
+                             onClick={() => toggleProjectFilter(p.name)}
+                             style={{
+                               display:'flex', alignItems:'center', gap:8,
+                               padding:'6px 8px', borderRadius:6, cursor:'pointer',
+                               background: projectFilters.includes(p.name) ? 'rgba(37,99,235,.08)' : 'transparent',
+                               transition: 'background .1s',
+                             }}>
+                          <div style={{
+                            width:16, height:16, borderRadius:4,
+                            border: projectFilters.includes(p.name) ? '2px solid var(--accent)' : '2px solid var(--border)',
+                            background: projectFilters.includes(p.name) ? 'var(--accent)' : 'transparent',
+                            display:'flex', alignItems:'center', justifyContent:'center',
+                            transition: 'all .15s',
+                          }}>
+                            {projectFilters.includes(p.name) && (
+                              <span style={{color:'#fff', fontSize:10, lineHeight:1}}>✓</span>
+                            )}
+                          </div>
+                          <span style={{fontSize:13, color: projectFilters.includes(p.name) ? 'var(--accent)' : 'var(--text)', fontWeight: projectFilters.includes(p.name) ? 500 : 400}}>
+                            {p.name}
+                          </span>
+                          <span style={{fontSize:10, color:'var(--text-dim)', marginLeft:'auto'}}>
+                            {p.wiki_pages} wiki
+                          </span>
+                        </div>
+                      ))}
+                      {availableProjects.length === 0 && (
+                        <div style={{padding:12, fontSize:12, color:'var(--text-dim)', textAlign:'center'}}>
+                          Нет проектов
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
             <button className="send-btn" onClick={send} disabled={isStreaming || !input.trim()}>
               {isStreaming ? '⏳' : '↑'}
             </button>
+            </div>
           </div>
         </div>
 
