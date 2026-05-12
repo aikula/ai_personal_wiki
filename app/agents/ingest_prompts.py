@@ -94,6 +94,9 @@ No prose before or after JSON.
 STEP2_PROMPT = """## Planned Page
 {planned_page_json}
 
+## Source File
+{source_file}
+
 ## Source Sections for This Page
 {source_sections}
 
@@ -110,19 +113,20 @@ Generate the wiki page. Rules:
 - LANGUAGE: Write all content in Russian. Keep technical terms, product names, acronyms in English.
 - content: Markdown, use [[slug]] for all wiki cross-references
 - All internal links MUST use [[slug]] format, never relative paths
+- NEVER create nested wikilinks like [[page/[[other-page]]]] — each [[ must have exactly one matching ]]
 - title: concise, matches official naming from source
 - tags: 2-5 lowercase tags relevant to content
 - confidence: {confidence}
 - sources: {sources_count}
 - last_confirmed: {today}
 - Max content length: {char_limit} chars total (including frontmatter)
-- End content with ## Sources section listing source_file
+- End content with ## Sources section listing the source file
 - Include a `synopsis` field (2-3 sentence summary for search/preview)
 - Add a `## Связанные страницы` section when link candidates exist (at least 2, project-local first)
 - Link known entities/concepts from the candidate list on first meaningful mention
 - Do not invent slugs that are not in the candidate list
 - Do not link every repeated mention
-- Add provenance markers for factual claims: `` ^[raw/source.md] `` after each important claim
+- Add provenance markers for factual claims: `` ^[{source_file}] `` after each important claim
 - Mark inferred knowledge as `` [INFERRED] `` and ambiguous as `` [AMBIGUOUS] ``
 
 Output JSON schema:

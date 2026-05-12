@@ -1102,7 +1102,24 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
             logger.info("Wiki directory removed: %s", self.wiki_dir)
         self.wiki_dir.mkdir()
         self._bootstrap_index()
-        (self.wiki_dir / "log.md").write_text("# Change Log\n\n", encoding="utf-8")
+        today = date.today().isoformat()
+        log_content = f"""---
+title: Change Log
+project: _general
+type: log
+tags: []
+confidence: 1.0
+sources: 0
+last_confirmed: {today}
+supersedes: null
+superseded_by: null
+created: {today}
+---
+
+# Change Log
+
+"""
+        (self.wiki_dir / "log.md").write_text(log_content, encoding="utf-8")
         logger.info("Wiki directory re-bootstrapped: %s", self.wiki_dir)
 
     def clear_all_drafts(self) -> int:
@@ -1287,10 +1304,17 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         try:
             raw = path.read_text(encoding="utf-8")
             post = frontmatter.loads(raw)
+            # Convert date objects back to strings to satisfy linter
+            meta = {}
+            for k, v in post.metadata.items():
+                if isinstance(v, date):
+                    meta[k] = v.isoformat()
+                else:
+                    meta[k] = v
             return WikiPage(
                 slug=slug,
                 path=path,
-                meta=dict(post.metadata),
+                meta=meta,
                 content=post.content,
                 raw=raw,
                 char_count=len(raw),

@@ -219,6 +219,10 @@ def auto_link(
         if in_code_block or line.startswith("#") or "[[]]" in line:
             result_lines.append(line)
             continue
+        # Skip lines with existing wikilinks or URLs to avoid nested links
+        if "[[" in line and "]]" in line:
+            result_lines.append(line)
+            continue
         if "[" in line and "]" in line and "(http" in line:
             result_lines.append(line)
             continue
@@ -232,15 +236,15 @@ def auto_link(
                 continue
             # Replace first occurrence of alias that is not already linked
             pattern = re.compile(
-                rf"(?<!\[\[)\b{re.escape(alias)}\b(?!\]\])", re.IGNORECASE
+                rf"(?<!\[)\b{re.escape(alias)}\b(?!\])", re.IGNORECASE
             )
             match = pattern.search(modified)
             if not match:
                 continue
             start = match.start()
-            # Skip if inside an existing markdown link or code span
+            # Skip if inside a code span
             prefix = modified[max(0, start - 1):start]
-            if prefix in ("[", "`"):
+            if prefix == "`":
                 continue
             modified = pattern.sub(f"[[{slug}|{alias}]]", modified, count=1)
             added += 1
@@ -262,3 +266,70 @@ def validate_wikilinks(content: str, existing_slugs: set[str]) -> list[str]:
         if slug and slug not in existing_slugs:
             broken.append(slug)
     return list(set(broken))
+
+
+def normalize_wikilinks(content: str, existing_slugs: set[str] | None = None) -> str:
+    """Post-process wikilinks and provenance markers in generated content.
+
+    - Fix nested wikilinks: [[prefix/[[slug]] -> [[slug]]
+    - Replace backslashes with forward slashes in [[...]] and ^[...]
+    - Strip file extensions (.md, .pdf, .docx) from [[...]] slugs
+    - Convert raw source file paths to plain text
+    - If existing_slugs provided: unlink single-segment [[slug]] that don't exist (e.g. [[pgvector]])
+    """
+    # Fix nested wikilinks: [[prefix/[[slug]] -> [[slug]]
+    # Run in a loop to handle arbitrarily deep nesting (e.g. [[a/[[b/[[c|txt]]]])
+    while True:
+        new = re.sub(
+            r'\[\[([^\[\]]*?)\[\[([^\[\]]+?)(?:\|([^\[\]]+?))?\]\]',
+            lambda m: '[[' + m.group(2) + ('|' + m.group(3) if m.group(3) else '') + ']]',
+            content,
+        )
+        if new == content:
+            break
+        content = new
+    # Replace backslashes with forward slashes inside [[...]]
+    content = re.sub(r'\[\[([^\]]+)\]\]', lambda m: '[[' + m.group(1).replace('\\', '/') + ']]', content)
+    # Strip file extensions from slugs inside [[...]]
+    content = re.sub(
+        r'\[\[([^\]]+?)\.(?:md|pdf|docx|pptx|txt)(\|[^\]]+)?\]\]',
+        lambda m: '[[' + m.group(1) + (m.group(2) or '') + ']]',
+        content,
+        flags=re.IGNORECASE,
+    )
+    # Convert [[raw_file_path]] to plain text when the slug looks like a raw source file
+    # (has a segment starting with digits, e.g. _general/01_eywa_baseline_source)
+    content = re.sub(
+        r'\[\[([a-z_]+/(?:\d+[-_])[^\]|]*?)(?:\|[^\]]+)?\]\]',
+        lambda m: m.group(1),
+        content,
+    )
+    # Unlink non-existing wikilinks:
+    # - single-segment (no /): common tech terms (pgvector, fastapi, etc.)
+    # - first segment not a known project: made-up slugs (fastapi/backend, etc.)
+    # - ends with - or _: truncated slugs (knowledge-, etc.)
+    if existing_slugs is not None:
+        known_projects = {s.split("/")[0] for s in existing_slugs if "/" in s}
+        def _unlink_broken(m: re.Match) -> str:
+            slug = m.group(1).strip()
+            display = m.group(2)
+            if slug in existing_slugs:
+                return m.group(0)
+            if "/" not in slug:
+                return display if display else slug
+            # Multi-segment: check first segment is a known project
+            first_seg = slug.split("/")[0]
+            if first_seg not in known_projects:
+                return display if display else slug
+            # Trailing hyphen/underscore: truncated slug
+            if slug.endswith("-") or slug.endswith("_"):
+                return display if display else slug
+            return m.group(0)
+        content = re.sub(
+            r'\[\[([^\]|]+?)(?:\|([^\]]+))?\]\]',
+            _unlink_broken,
+            content,
+        )
+    # Fix backslashes in provenance markers ^[...]
+    content = re.sub(r'\^\[([^\]]+)\]', lambda m: '^[' + m.group(1).replace('\\', '/') + ']', content)
+    return content

@@ -32,6 +32,17 @@ wiki-data/
 *.egg-info/
 dist/
 build/
+TODO.md
+windows_start.txt
+test_raw/
+
+# Internal dev docs (keep on disk, not in repo)
+docs/coding_agent_doc_ingest_fix_plan.md
+docs/conflict_resolution_report.md
+docs/demo_readiness_tasks.md
+docs/QA01.md
+docs/REVIEW_STAGE1.md
+docs/wiki_engine_improvement_plan.md
 
 # Test
 .pytest_cache/

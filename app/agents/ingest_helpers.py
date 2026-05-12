@@ -60,10 +60,15 @@ def dict_to_analysis_result(data: dict, source_file: str, project: str) -> Analy
     def parse_planned(items: list) -> list[PlannedPage]:
         pages = []
         for item in (items or []):
+            slug = str(item.get("slug", ""))
+            # Project is always the first segment of the slug.
+            # LLM sometimes puts the source-file project on _general pages,
+            # which breaks cross-project audit detection.
+            derived = slug.split("/")[0] if "/" in slug else project
             pages.append(PlannedPage(
-                slug=str(item.get("slug", "")),
+                slug=slug,
                 title=str(item.get("title", "")),
-                project=str(item.get("project", project)),
+                project=derived,
                 page_type=str(item.get("page_type", "entity")),
                 tags=list(item.get("tags", [])),
                 action=str(item.get("action", "create")),

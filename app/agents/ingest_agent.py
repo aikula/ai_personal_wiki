@@ -31,7 +31,7 @@ from app.core.linter import WikiLinter
 from app.core.llm_client import LLMClient
 from app.core.raw_sources import RawSourceError, list_raw_source_files, read_raw_source_file
 from app.core.token_budget import ContextBudget
-from app.core.utils import auto_link, validate_wikilinks, now_iso
+from app.core.utils import auto_link, normalize_wikilinks, validate_wikilinks, now_iso
 from app.core.wiki_fs import ConflictEntry, IngestLog, WikiFS, WikiPage
 
 logger = logging.getLogger("wiki.ingest")
@@ -230,6 +230,7 @@ print(json.dumps(result))
             link_candidates_text = "\n".join(link_lines) if link_lines else "(no candidates yet)"
             prompt = STEP2_PROMPT.format(
                 planned_page_json=json.dumps(planned_page_to_dict(planned), ensure_ascii=False, indent=2),
+                source_file=analysis.source_file.replace("\\", "/"),
                 source_sections=source_sections_text,
                 existing_content=existing_trimmed,
                 link_candidates=link_candidates_text,
@@ -239,20 +240,22 @@ print(json.dumps(result))
                 char_limit=char_limit,
             )
             system = build_system_prompt(STEP2_SYSTEM, agents_md, skills)
-            raw = self.llm.call(system=system, prompt=prompt, temperature=0.1, json_mode=True, max_tokens=2500)
+            raw = self.llm.call(system=system, prompt=prompt, temperature=0.1, json_mode=True, max_tokens=4000)
             try:
                 page_data = parse_json_response(raw, context=f"Step2 {planned.slug}")
             except ValueError:
                 retry_prompt = prompt + "\n\nIMPORTANT: Your previous response was not valid JSON. Output ONLY valid JSON."
-                raw = self.llm.call(system=system, prompt=retry_prompt, temperature=0.0, json_mode=True, max_tokens=2500)
+                raw = self.llm.call(system=system, prompt=retry_prompt, temperature=0.0, json_mode=True, max_tokens=4000)
                 page_data = parse_json_response(raw, context=f"Step2 retry {planned.slug}")
             meta = page_data.get("meta", {})
             content = page_data.get("content", "")
             if not meta.get("created"):
                 meta["created"] = today
+            # Enforce project from slug (LLM sometimes copies source-file project onto _general pages)
+            meta["project"] = planned.slug.split("/")[0] if "/" in planned.slug else analysis.project
             content = auto_link(content, self.fs.build_link_candidates(), current_slug=planned.slug)
-            # Validate wikilinks against existing pages
             existing_slugs = {p.slug for p in self.fs.list_pages()}
+            content = normalize_wikilinks(content, existing_slugs)
             broken = validate_wikilinks(content, existing_slugs)
             if broken:
                 logger.warning("Step2 %s has %d broken wikilinks: %s", planned.slug, len(broken), broken)

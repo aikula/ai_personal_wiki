@@ -24,8 +24,7 @@ async def get_duplicates(
     agent: Annotated[AuditAgent, Depends(get_audit_agent)] = None,
 ):
     """Run deterministic duplicate/collapse detection."""
-    candidates = agent.audit_duplicates(project=project)
-    return {"candidates": candidates, "total": len(candidates)}
+    return agent.audit_duplicates(project=project)
 
 
 @router.get("/synthesis")

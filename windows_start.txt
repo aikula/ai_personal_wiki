@@ -1,4 +1,0 @@
-pip install -e .
-set OPENAI_API_KEY=sk-...
-set WIKI_DATA_PATH=./wiki-data
-uvicorn app.api.main:app --reload --port 8000

@@ -282,64 +282,70 @@ class AuditAgent:
 
     # ── Duplicate / collapse audit ──────────────────────────────
 
-    def audit_duplicates(self, project: str | None = None) -> list[dict]:
+    def audit_duplicates(self, project: str | None = None) -> dict:
         """Deterministic duplicate/collapse candidate detection.
 
-        Returns list of candidates::
+        Returns::
 
-            {"id": str, "kind": str, "pages": [slug], "reason": str,
-             "recommended_action": str, "score": float}
+            {"candidates": [{"id", "kind", "pages", "titles": {slug: title},
+                             "reason", "recommended_action", "score"}],
+             "total": int}
         """
         pages = self.fs.list_pages(project=project)
+        page_map = {p.slug: p for p in pages}
         candidates: list[dict] = []
         seen: set[str] = set()
 
-        # 1. Same or similar title within same project
-        by_project_title: dict[tuple[str, str], list[str]] = {}
+        def _make(slugs: list[str], kind: str, reason: str, action: str, score: float) -> dict:
+            titles = {}
+            for s in slugs:
+                p = page_map.get(s)
+                titles[s] = p.title if p else s
+            return {
+                "id": f"{kind}-{len(candidates) + 1:03d}",
+                "kind": kind,
+                "pages": slugs,
+                "titles": titles,
+                "reason": reason,
+                "recommended_action": action,
+                "score": score,
+            }
+
+        # 1. Same title (score 0.9) — true duplicates
+        by_title: dict[tuple[str, str], list[str]] = {}
         for p in pages:
             if p.page_type in ("index", "log"):
                 continue
             key = (p.project, p.title.lower().strip())
-            by_project_title.setdefault(key, []).append(p.slug)
-        for (proj, title), slugs in by_project_title.items():
+            by_title.setdefault(key, []).append(p.slug)
+        for (proj, title), slugs in by_title.items():
             if len(slugs) > 1:
-                candidates.append({
-                    "id": f"dup-title-{len(candidates) + 1:03d}",
-                    "kind": "duplicate",
-                    "pages": slugs,
-                    "reason": f"Same title '{title}' in project '{proj}'",
-                    "recommended_action": "merge or differentiate titles",
-                    "score": 0.9,
-                })
+                candidates.append(_make(
+                    slugs, "duplicate",
+                    f"Same title '{title}' in project '{proj}'",
+                    "merge or differentiate titles", 0.9,
+                ))
                 seen.update(slugs)
 
-        # 2. Same source references → likely overlap
-        source_map: dict[str, list[str]] = {}
+        # 2. Same source references within same project (score 0.6)
+        ref_map: dict[str, list[str]] = {}
         for p in pages:
-            if p.page_type in ("index", "log"):
-                continue
-            if p.slug in seen:
+            if p.page_type in ("index", "log") or p.slug in seen:
                 continue
             for ref in p.wikilinks:
-                source_map.setdefault(ref, []).append(p.slug)
-        for ref, slugs in source_map.items():
+                if ref.startswith(p.project):
+                    ref_map.setdefault(ref, []).append(p.slug)
+        for ref, slugs in ref_map.items():
             if len(slugs) > 1:
-                overlap_key = tuple(sorted(slugs))
-                if overlap_key not in seen:
-                    candidates.append({
-                        "id": f"overlap-ref-{len(candidates) + 1:03d}",
-                        "kind": "overlap",
-                        "pages": list(overlap_key),
-                        "reason": f"Both link to [[{ref}]]",
-                        "recommended_action": "cross-link or merge",
-                        "score": 0.6,
-                    })
+                candidates.append(_make(
+                    slugs, "overlap",
+                    f"Both link to [[{ref}]]",
+                    "cross-link or merge", 0.6,
+                ))
 
-        # 3. High tag overlap within same project
+        # 3. Tag overlap (score 0.5) — only if 3+ shared tags and same project
         for p in pages:
-            if p.page_type in ("index", "log"):
-                continue
-            if p.slug in seen:
+            if p.page_type in ("index", "log") or p.slug in seen:
                 continue
             for q in pages:
                 if q.slug <= p.slug or q.slug in seen:
@@ -347,17 +353,14 @@ class AuditAgent:
                 if q.project != p.project:
                     continue
                 common = set(p.tags) & set(q.tags)
-                if len(common) >= 2 and len(p.tags) >= 2 and len(q.tags) >= 2:
-                    candidates.append({
-                        "id": f"overlap-tag-{len(candidates) + 1:03d}",
-                        "kind": "overlap",
-                        "pages": [p.slug, q.slug],
-                        "reason": f"Shared tags: {common}",
-                        "recommended_action": "review for merge or cross-link",
-                        "score": 0.5,
-                    })
+                if len(common) >= 3 and len(p.tags) >= 2 and len(q.tags) >= 2:
+                    candidates.append(_make(
+                        [p.slug, q.slug], "overlap",
+                        f"Shared tags: {common}",
+                        "review for merge or cross-link", 0.5,
+                    ))
 
-        return candidates
+        return {"candidates": candidates, "total": len(candidates)}
 
     # ── Synthesis queue ──────────────────────────────────────────
 
