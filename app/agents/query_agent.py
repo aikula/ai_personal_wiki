@@ -459,7 +459,7 @@ class QueryAgent:
         if agents_md:
             system = agents_md + "\n\n" + system
 
-            messages = [*history, {
+        messages = [*history, {
             "role": "user",
             "content": ANSWER_PROMPT.format(
                 question=question,
