@@ -138,12 +138,9 @@ Conflict Resolution Patterns:
    pip install -e .
    ```
 
-2. **Настройте переменные окружения** (или `.env`):
+2. **Создайте файл `.env`**:
    ```powershell
-   set OPENAI_API_KEY=sk-...
-   set LLM_BASE_URL=https://api.openai.com/v1
-   set LLM_MODEL=gpt-4o
-   set LANGUAGE=ru
+   Copy-Item .env.example .env
    ```
 
 3. **Запустите сервер:**
@@ -161,10 +158,7 @@ Conflict Resolution Patterns:
 git clone https://github.com/aikula/ai_personal_wiki.git
 cd ai_personal_wiki
 pip install -e .
-export OPENAI_API_KEY="sk-..."
-export LLM_BASE_URL="https://api.openai.com/v1"
-export LLM_MODEL="gpt-4o"
-export LANGUAGE="ru"
+cp .env.example .env
 uvicorn app.api.main:app --reload --port 8000
 ```
 
@@ -188,10 +182,10 @@ docker compose up --build
 # Запустите Ollama
 ollama run qwen2.5:14b
 
-# Настройте переменные (Linux/macOS)
-export LLM_BASE_URL="http://localhost:11434/v1"
-export LLM_MODEL="qwen2.5:14b"
-export OPENAI_API_KEY="ollama"
+# Настройте значения в `.env`
+# LLM_BASE_URL="http://localhost:11434/v1"
+# LLM_MODEL="qwen2.5:14b"
+# LLM_API_KEY="ollama"
 
 # Docker + Ollama
 # Используйте http://host.docker.internal:11434/v1 как LLM_BASE_URL

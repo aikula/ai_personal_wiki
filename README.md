@@ -16,11 +16,13 @@ LLM-powered personal wiki from markdown documents. **No databases. No vector emb
 
 ```powershell
 pip install -e .
-set OPENAI_API_KEY=sk-...
+Copy-Item .env.example .env
 python -m uvicorn app.api.main:app --reload --port 8000
 ```
 
 Open http://localhost:8000 → 📂 Upload → Ask questions → Resolve conflicts → 🔍 Audit
+
+The app reads `.env` on startup and warns in logs if the LLM connection is not configured or cannot be reached.
 
 ## Documentation
 

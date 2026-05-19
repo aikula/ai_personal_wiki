@@ -12,6 +12,8 @@ Mounts:
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -22,9 +24,11 @@ from fastapi.staticfiles import StaticFiles
 from app.api.routes import audit as audit_route
 from app.api.routes import chat, conflicts, ingest, wiki
 from app.api.routes import settings as settings_route
+from app.api.dependencies import get_llm_client, get_settings
 from app.config import setup_logging
 
 setup_logging()
+logger = logging.getLogger("wiki.api")
 
 app = FastAPI(
     title="Wiki Engine",
@@ -48,10 +52,48 @@ app.include_router(conflicts.router)
 app.include_router(audit_route.router)
 app.include_router(settings_route.router)
 
+# ── Startup checks ───────────────────────────────────────────────
+async def _check_llm_connection() -> dict:
+    settings = get_settings()
+    if not settings.llm.api_key:
+        message = (
+            "LLM API key is not configured. Running in degraded mode; "
+            "LLM-backed features will remain unavailable until configured."
+        )
+        logger.warning(message)
+        return {"connected": False, "warning": message}
+
+    llm = get_llm_client(settings)
+    try:
+        response = await asyncio.to_thread(
+            llm.call,
+            system="You are a test assistant.",
+            prompt='Reply with exactly: {"status": "ok"}',
+            temperature=0.0,
+        )
+        return {
+            "connected": True,
+            "model": llm.model,
+            "response_preview": response[:100],
+        }
+    except Exception as exc:
+        message = (
+            f"LLM connectivity check failed. Running in degraded mode: {exc}"
+        )
+        logger.warning(message)
+        return {"connected": False, "warning": message}
+
+
+@app.on_event("startup")
+async def startup_checks() -> None:
+    app.state.llm_status = await _check_llm_connection()
+
 # ── Health check ─────────────────────────────────────────────────
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "service": "wiki-engine"}
+    payload = {"status": "ok", "service": "wiki-engine"}
+    payload["llm"] = getattr(app.state, "llm_status", {"connected": None})
+    return payload
 
 # ── Serve UI ─────────────────────────────────────────────────────
 _UI_DIR = Path(__file__).parent.parent / "ui"

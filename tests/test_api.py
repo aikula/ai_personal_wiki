@@ -2,6 +2,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.api.main import app as fastapi_app
+from app.api.main import _check_llm_connection
 from app.config import Settings
 
 
@@ -29,6 +30,7 @@ async def test_health(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "ok"
+    assert "llm" in data
 
 
 @pytest.mark.asyncio
@@ -98,6 +100,19 @@ async def test_rebuild_requires_confirm(client):
 async def test_settings_get(client):
     resp = await client.get("/api/settings")
     assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_llm_startup_check_warns_when_not_configured(monkeypatch):
+    s = Settings()
+    s.wiki_data_path = "/tmp"
+    s.llm.api_key = ""
+    monkeypatch.setattr("app.api.main.get_settings", lambda: s)
+
+    result = await _check_llm_connection()
+
+    assert result["connected"] is False
+    assert "warning" in result
 
 
 @pytest.mark.asyncio

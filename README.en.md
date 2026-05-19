@@ -138,12 +138,9 @@ During ingest, pages auto-linked via `auto_link` (up to 10 candidates per page).
    pip install -e .
    ```
 
-2. **Set environment variables** (or `.env` file):
+2. **Create a `.env` file**:
    ```powershell
-   set OPENAI_API_KEY=sk-...
-   set LLM_BASE_URL=https://api.openai.com/v1
-   set LLM_MODEL=gpt-4o
-   set LANGUAGE=ru
+   Copy-Item .env.example .env
    ```
 
 3. **Run the server:**
@@ -161,10 +158,7 @@ During ingest, pages auto-linked via `auto_link` (up to 10 candidates per page).
 git clone https://github.com/aikula/ai_personal_wiki.git
 cd ai_personal_wiki
 pip install -e .
-export OPENAI_API_KEY="sk-..."
-export LLM_BASE_URL="https://api.openai.com/v1"
-export LLM_MODEL="gpt-4o"
-export LANGUAGE="ru"
+cp .env.example .env
 uvicorn app.api.main:app --reload --port 8000
 ```
 
@@ -188,10 +182,10 @@ Open `http://localhost:8000`.
 # Start Ollama
 ollama run qwen2.5:14b
 
-# Set environment (Linux/macOS)
-export LLM_BASE_URL="http://localhost:11434/v1"
-export LLM_MODEL="qwen2.5:14b"
-export OPENAI_API_KEY="ollama"
+# Set values in .env
+# LLM_BASE_URL="http://localhost:11434/v1"
+# LLM_MODEL="qwen2.5:14b"
+# LLM_API_KEY="ollama"
 ```
 
 > **Model recommendations**: for strong reasoning with multilingual support — `qwen2.5:14b`, `llama3.1:8b`, or `gemma3:12b`.
