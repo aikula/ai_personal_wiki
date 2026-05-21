@@ -421,6 +421,87 @@
                  border-radius: 6px; transition: all .15s;
     }
     .icon-btn:hover { color: var(--text); background: var(--surface2); }
+
+    /* ── Auth screen ─────────────────────────── */
+    .auth-screen {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; background: var(--bg);
+    }
+    .auth-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; padding: 36px; width: 400px; max-width: 95vw;
+      box-shadow: 0 8px 32px rgba(0,0,0,.12);
+    }
+    .auth-card h2 { font-size: 22px; margin-bottom: 6px; font-weight: 700; color: var(--accent); }
+    .auth-card .subtitle { font-size: 13px; color: var(--text-dim); margin-bottom: 24px; }
+    .auth-tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+    .auth-tab {
+      flex: 1; padding: 10px; text-align: center; font-size: 14px; font-weight: 500;
+      color: var(--text-dim); cursor: pointer; border-bottom: 2px solid transparent;
+      transition: all .15s;
+    }
+    .auth-tab:hover { color: var(--text); }
+    .auth-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .auth-field { margin-bottom: 14px; }
+    .auth-field label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 4px; }
+    .auth-field input {
+      width: 100%; background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 10px 14px;
+      font-size: 14px; outline: none; transition: border-color .15s, box-shadow .15s;
+    }
+    .auth-field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+    .auth-btn {
+      width: 100%; background: var(--accent); color: #fff; border: none;
+      border-radius: 8px; padding: 12px; font-size: 14px; font-weight: 600;
+      cursor: pointer; margin-top: 8px; transition: opacity .15s;
+      box-shadow: 0 1px 3px rgba(37,99,235,.2);
+    }
+    .auth-btn:hover { opacity: .9; }
+    .auth-btn:disabled { opacity: .4; cursor: default; }
+    .auth-error {
+      background: rgba(220,38,38,.06); border: 1px solid var(--red);
+      border-radius: 8px; padding: 10px 14px; font-size: 13px; color: var(--red);
+      margin-bottom: 14px;
+    }
+
+    /* ── User menu ───────────────────────────── */
+    .user-menu-btn {
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 5px 12px;
+      font-size: 13px; cursor: pointer; font-weight: 500;
+      display: flex; align-items: center; gap: 6px; transition: all .15s;
+    }
+    .user-menu-btn:hover { border-color: var(--accent); }
+    .user-menu-dropdown {
+      position: absolute; top: calc(var(--header-h) + 4px); right: 12px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px; min-width: 260px;
+      box-shadow: 0 4px 16px rgba(0,0,0,.12); z-index: 50;
+    }
+    .user-menu-email { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 10px; }
+    .usage-bar { margin-bottom: 8px; }
+    .usage-label { font-size: 11px; color: var(--text-dim); display: flex; justify-content: space-between; margin-bottom: 3px; }
+    .usage-track { height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+    .usage-fill { height: 100%; border-radius: 3px; transition: width .3s; }
+    .usage-fill.green { background: var(--green); }
+    .usage-fill.yellow { background: var(--yellow); }
+    .usage-fill.red { background: var(--red); }
+    .usage-reset { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+    .user-menu-divider { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+    .user-menu-logout {
+      width: 100%; background: transparent; border: 1px solid var(--border);
+      color: var(--text-dim); border-radius: 8px; padding: 8px;
+      font-size: 13px; cursor: pointer; font-weight: 500; transition: all .15s;
+    }
+    .user-menu-logout:hover { border-color: var(--red); color: var(--red); }
+
+    /* ── Quota exceeded banner ───────────────── */
+    .quota-banner {
+      background: rgba(220,38,38,.08); border: 1px solid var(--red);
+      border-radius: 8px; padding: 10px 16px; margin: 8px 16px;
+      font-size: 13px; color: var(--red); display: flex; align-items: center; gap: 8px;
+    }
+    .quota-banner .spacer { flex: 1; }
   </style>
 </head>
 <body>
@@ -434,16 +515,17 @@ const { useState, useEffect, useRef, useCallback } = React;
 // ─────────────────────────────────────────────
 const api = {
   async get(path) {
-    const r = await fetch(`/api${path}`);
+    const token = sessionStorage.getItem('wiki_token');
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    const r = await fetch(`/api${path}`, { headers });
     if (!r.ok) throw new Error(await r.text());
     return r.json();
   },
   async post(path, body) {
-    const r = await fetch(`/api${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const token = sessionStorage.getItem('wiki_token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const r = await fetch(`/api${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
     if (!r.ok) throw new Error(await r.text());
     return r.json();
   },
@@ -511,6 +593,242 @@ function ToastProvider({ children }) {
         ))}
       </div>
     </ToastCtx.Provider>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Auth context
+// ─────────────────────────────────────────────
+const AuthCtx = React.createContext(null);
+
+function AuthProvider({ children }) {
+  const [authState, setAuthState] = useState({ loading: true, mode: 'personal_local', user: null, credits: null });
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch('/api/auth/me', {
+          headers: sessionStorage.getItem('wiki_token')
+            ? { 'Authorization': `Bearer ${sessionStorage.getItem('wiki_token')}` }
+            : {},
+        });
+        if (r.ok) {
+          const data = await r.json();
+          setAuthState({ loading: false, mode: 'multi_user', user: data.user, credits: data.credits });
+        } else {
+          // Try health endpoint to detect mode
+          const hr = await fetch('/api/health');
+          if (hr.ok) {
+            setAuthState({ loading: false, mode: 'personal_local', user: null, credits: null });
+          } else {
+            setAuthState({ loading: false, mode: 'personal_local', user: null, credits: null });
+          }
+        }
+      } catch {
+        setAuthState({ loading: false, mode: 'personal_local', user: null, credits: null });
+      }
+    })();
+  }, []);
+
+  const login = async (email, password) => {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: 'Login failed' }));
+      throw new Error(err.detail || err.message || 'Login failed');
+    }
+    const data = await r.json();
+    sessionStorage.setItem('wiki_token', data.token);
+    setAuthState({ loading: false, mode: 'multi_user', user: data.user, credits: null });
+    return data;
+  };
+
+  const register = async (email, password) => {
+    const r = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: 'Registration failed' }));
+      throw new Error(err.detail || err.message || 'Registration failed');
+    }
+    const data = await r.json();
+    sessionStorage.setItem('wiki_token', data.token);
+    setAuthState({ loading: false, mode: 'multi_user', user: data.user, credits: data.credits });
+    return data;
+  };
+
+  const logout = async () => {
+    const token = sessionStorage.getItem('wiki_token');
+    if (token) {
+      try {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+      } catch {}
+    }
+    sessionStorage.removeItem('wiki_token');
+    setAuthState({ loading: false, mode: 'personal_local', user: null, credits: null });
+  };
+
+  const refreshCredits = async () => {
+    const token = sessionStorage.getItem('wiki_token');
+    if (!token) return;
+    try {
+      const r = await fetch('/api/usage/me', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (r.ok) {
+        const data = await r.json();
+        setAuthState(prev => ({ ...prev, credits: { daily: data.daily, welcome: data.welcome } }));
+      }
+    } catch {}
+  };
+
+  return (
+    <AuthCtx.Provider value={{ authState, login, register, logout, refreshCredits }}>
+      {children}
+    </AuthCtx.Provider>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Auth Screen (Login / Register)
+// ─────────────────────────────────────────────
+function AuthScreen() {
+  const { login, register } = React.useContext(AuthCtx);
+  const [tab, setTab] = useState('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      if (tab === 'login') {
+        await login(email, password);
+      } else {
+        await register(email, password);
+      }
+    } catch(err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="auth-screen">
+      <div className="auth-card">
+        <h2>🧠 Wiki Движок</h2>
+        <div className="subtitle">Войдите или создайте аккаунт</div>
+        <div className="auth-tabs">
+          <div className={`auth-tab ${tab==='login'?'active':''}`} onClick={() => { setTab('login'); setError(''); }}>
+            Вход
+          </div>
+          <div className={`auth-tab ${tab==='register'?'active':''}`} onClick={() => { setTab('register'); setError(''); }}>
+            Регистрация
+          </div>
+        </div>
+        {error && <div className="auth-error">{error}</div>}
+        <form onSubmit={handleSubmit}>
+          <div className="auth-field">
+            <label>Email</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                   placeholder="you@example.com" required autoComplete="email" />
+          </div>
+          <div className="auth-field">
+            <label>Пароль</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                   placeholder="Минимум 8 символов" required minLength={8} autoComplete="current-password" />
+          </div>
+          <button className="auth-btn" type="submit" disabled={loading}>
+            {loading ? 'Загрузка...' : (tab === 'login' ? 'Войти' : 'Создать аккаунт')}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// User Menu (header)
+// ─────────────────────────────────────────────
+function UserMenu() {
+  const { authState, logout, refreshCredits } = React.useContext(AuthCtx);
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef();
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => { refreshCredits(); }, []);
+
+  const { user, credits } = authState;
+  if (!user) return null;
+
+  const usagePct = credits?.daily?.limit > 0
+    ? Math.round((credits.daily.used / credits.daily.limit) * 100)
+    : 0;
+  const usageColor = usagePct > 80 ? 'red' : usagePct > 50 ? 'yellow' : 'green';
+  const welcomePct = credits?.welcome?.limit > 0
+    ? Math.round((credits.welcome.used / credits.welcome.limit) * 100)
+    : 0;
+  const welcomeColor = welcomePct > 80 ? 'red' : welcomePct > 50 ? 'yellow' : 'green';
+
+  return (
+    <div style={{ position: 'relative' }} ref={menuRef}>
+      <button className="user-menu-btn" onClick={() => setOpen(v => !v)}>
+        👤 {user.email}
+      </button>
+      {open && (
+        <div className="user-menu-dropdown">
+          <div className="user-menu-email">{user.email}</div>
+          {credits && (
+            <>
+              <div className="usage-bar">
+                <div className="usage-label">
+                  <span>Ежедневный лимит</span>
+                  <span>{credits.daily.remaining} / {credits.daily.limit}</span>
+                </div>
+                <div className="usage-track">
+                  <div className={`usage-fill ${usageColor}`} style={{ width: `${usagePct}%` }} />
+                </div>
+                {credits.daily.reset_at && (
+                  <div className="usage-reset">Сброс: {new Date(credits.daily.reset_at).toLocaleString()}</div>
+                )}
+              </div>
+              <div className="usage-bar">
+                <div className="usage-label">
+                  <span>Приветственный лимит</span>
+                  <span>{credits.welcome.remaining} / {credits.welcome.limit}</span>
+                </div>
+                <div className="usage-track">
+                  <div className={`usage-fill ${welcomeColor}`} style={{ width: `${welcomePct}%` }} />
+                </div>
+              </div>
+            </>
+          )}
+          <hr className="user-menu-divider" />
+          <button className="user-menu-logout" onClick={() => { logout(); setOpen(false); }}>
+            Выйти
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1880,6 +2198,7 @@ function App() {
     } finally {
       setIsStreaming(false);
       loadSessions();
+      if (isMultiUser) refreshCredits();
     }
   };
 
@@ -1904,6 +2223,10 @@ function App() {
   }, []);
 
   // ── Render ───────────────────────────────────
+  const { authState, refreshCredits } = React.useContext(AuthCtx);
+  const isMultiUser = authState.mode === 'multi_user' && authState.user;
+  const dailyRemaining = authState.credits?.daily?.remaining ?? Infinity;
+  const showQuotaBanner = isMultiUser && dailyRemaining <= 0;
 
   return (
     <div id="root" style={{display:'flex', flexDirection:'column', height:'100vh'}}>
@@ -1934,7 +2257,19 @@ function App() {
         <button className="icon-btn" onClick={() => setRightOpen(o => !o)} title="Переключить wiki">
           {rightOpen ? '▶' : '◀'}
         </button>
+        {isMultiUser && <UserMenu />}
       </div>
+
+      {/* Quota exceeded banner */}
+      {showQuotaBanner && (
+        <div className="quota-banner">
+          ⚠️ Ежедневный лимит токенов исчерпан. Попробуйте после сброса или используйте приветственный лимит.
+          <span className="spacer" />
+          <button className="header-btn" onClick={() => { refreshCredits(); }} style={{fontSize:12, padding:'4px 10px'}}>
+            Обновить
+          </button>
+        </div>
+      )}
 
       <div className="main-area">
         {/* Left Panel — session history */}
@@ -2124,7 +2459,7 @@ function App() {
       {showUpload && (
         <UploadModal
           onClose={() => setShowUpload(false)}
-          onDone={refreshWiki}
+          onDone={(results) => { refreshWiki(); if (isMultiUser) refreshCredits(); }}
         />
       )}
       {showRebuild && <RebuildModal onClose={() => setShowRebuild(false)} onRefresh={refreshWiki} />}
@@ -2140,9 +2475,33 @@ function App() {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <ToastProvider>
-    <App />
+    <AuthProvider>
+      <AppWithAuth />
+    </AuthProvider>
   </ToastProvider>
 );
+
+// ─────────────────────────────────────────────
+// App with auth gate
+// ─────────────────────────────────────────────
+function AppWithAuth() {
+  const { authState } = React.useContext(AuthCtx);
+
+  if (authState.loading) {
+    return (
+      <div style={{display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'var(--text-dim)'}}>
+        <div style={{fontSize:16}}>Загрузка...</div>
+      </div>
+    );
+  }
+
+  // Multi-user mode without authenticated user → show login
+  if (authState.mode === 'multi_user' && !authState.user) {
+    return <AuthScreen />;
+  }
+
+  return <App />;
+}
 </script>
 </body>
 </html>

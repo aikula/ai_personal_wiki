@@ -104,7 +104,7 @@ async def list_projects(
 async def search_wiki(
     q: str = Query(min_length=1, max_length=500),
     project: str | None = Query(default=None),
-    projects: list[str] | None = Query(default=None),
+    projects: list[str] | None = Query(default=None),  # noqa: B008
     fs: Annotated[WikiFS, Depends(get_wiki_fs)] = None,
 ):
     """Full-text keyword search across wiki pages with optional project filter."""

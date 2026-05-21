@@ -212,8 +212,8 @@ async def apply_conflict_update(
     existing_content = meta["existing_content"]
 
     # Use LLM to generate updated page
-    from app.agents.ingest_prompts import STEP2_SYSTEM
     from app.agents.ingest_helpers import build_system_prompt
+    from app.agents.ingest_prompts import STEP2_SYSTEM
 
     skills = fs.read_skills()
     agents_md_text = ""

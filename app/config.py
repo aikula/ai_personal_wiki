@@ -9,6 +9,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from dotenv import load_dotenv
@@ -16,6 +17,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 logger = logging.getLogger("wiki")
+
+# ── App Mode ─────────────────────────────────────────────────────
+
+AppMode = Literal["personal_local", "personal_server", "multi_user"]
 
 
 def setup_logging(level: str = "INFO") -> None:
@@ -94,6 +99,20 @@ class AuthSettings:
 
 
 @dataclass
+class ControlSettings:
+    db_url: str = "sqlite:///data/control.db"
+    workspaces_root: str = "data/workspaces"
+
+
+@dataclass
+class MultiUserSettings:
+    registration_enabled: bool = True
+    default_daily_tokens: int = 30_000
+    default_welcome_tokens: int = 200_000
+    daily_reset_timezone: str = "UTC"
+
+
+@dataclass
 class Settings:
     language: str = "ru"
     llm: LLMSettings = field(default_factory=LLMSettings)
@@ -103,6 +122,9 @@ class Settings:
     audit: AuditSettings = field(default_factory=AuditSettings)
     auth: AuthSettings = field(default_factory=AuthSettings)
     wiki_data_path: str = "./wiki-data"
+    app_mode: AppMode = "personal_local"
+    control: ControlSettings = field(default_factory=ControlSettings)
+    multi_user: MultiUserSettings = field(default_factory=MultiUserSettings)
 
     @classmethod
     def load(cls, config_path: str = "config/settings.yaml") -> Settings:
@@ -140,6 +162,32 @@ class Settings:
             os.environ.get("WIKI_LARGE_SOURCE_THRESHOLD_CHARS"),
             lambda v: setattr(settings.ingest, "large_source_threshold_chars", v),
         )
+
+        # App mode and control plane env overrides
+        app_mode = os.environ.get("APP_MODE", "")
+        if app_mode in ("personal_local", "personal_server", "multi_user"):
+            settings.app_mode = app_mode
+        control_db = os.environ.get("CONTROL_DB_URL", "")
+        if control_db:
+            settings.control.db_url = control_db
+        workspaces_root = os.environ.get("WIKI_WORKSPACES_ROOT", "")
+        if workspaces_root:
+            settings.control.workspaces_root = workspaces_root
+        _apply_env_bool(
+            os.environ.get("REGISTRATION_ENABLED"),
+            lambda v: setattr(settings.multi_user, "registration_enabled", v),
+        )
+        _apply_env_int(
+            os.environ.get("DEFAULT_DAILY_TOKENS"),
+            lambda v: setattr(settings.multi_user, "default_daily_tokens", v),
+        )
+        _apply_env_int(
+            os.environ.get("DEFAULT_WELCOME_TOKENS"),
+            lambda v: setattr(settings.multi_user, "default_welcome_tokens", v),
+        )
+        daily_tz = os.environ.get("DAILY_RESET_TIMEZONE", "")
+        if daily_tz:
+            settings.multi_user.daily_reset_timezone = daily_tz
 
         return settings
 
@@ -180,12 +228,17 @@ def _apply_dict(settings: Settings, data: dict) -> None:
         "query": settings.query,
         "audit": settings.audit,
         "auth": settings.auth,
+        "control": settings.control,
+        "multi_user": settings.multi_user,
     }
     for key, value in data.items():
         if key == "language":
             settings.language = value
         elif key == "wiki_data_path":
             settings.wiki_data_path = value
+        elif key == "app_mode":
+            if value in ("personal_local", "personal_server", "multi_user"):
+                settings.app_mode = value
         elif key in section_map and isinstance(value, dict):
             section = section_map[key]
             for k, v in value.items():

@@ -280,17 +280,28 @@ class WikiFS:
 
     Usage:
         fs = WikiFS(settings)
+        fs = WikiFS.from_path(path, limits=settings.limits)
         page = fs.read_page("myapp/deploy")
         fs.write_page("myapp/deploy", meta=..., content=...)
     """
 
-    def __init__(self, settings: Settings):
-        self.root = Path(settings.wiki_data_path)
+    def __init__(self, settings_or_root: Settings | Path | str, limits=None):
+        if isinstance(settings_or_root, Settings):
+            self.root = Path(settings_or_root.wiki_data_path)
+            self.limits = settings_or_root.limits
+        else:
+            self.root = Path(settings_or_root)
+            self.limits = limits
+
         self.wiki_dir = self.root / "wiki"
         self.raw_dir = self.root / "raw"
-        self.limits = settings.limits
         self._defer_index = False
         self._ensure_structure()
+
+    @classmethod
+    def from_path(cls, root: Path, limits=None) -> WikiFS:
+        """Create WikiFS from a direct path (used with WorkspaceContext)."""
+        return cls(root, limits=limits)
 
     @property
     def state_dir(self) -> Path:

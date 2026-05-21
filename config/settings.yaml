@@ -3,6 +3,19 @@
 
 language: "ru"
 
+app:
+  mode: "personal_local"  # personal_local | personal_server | multi_user
+
+control:
+  db_url: "sqlite:///data/control.db"
+  workspaces_root: "data/workspaces"
+
+multi_user:
+  registration_enabled: true
+  default_daily_tokens: 30000
+  default_welcome_tokens: 200000
+  daily_reset_timezone: "UTC"
+
 llm:
   base_url: "https://api.openai.com/v1"
   api_key: ""

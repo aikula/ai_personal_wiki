@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.dependencies import get_llm_client, get_settings
 from app.api.routes import audit as audit_route
-from app.api.routes import chat, conflicts, ingest, wiki
+from app.api.routes import auth, chat, conflicts, ingest, usage, wiki
 from app.api.routes import settings as settings_route
 from app.config import Settings, setup_logging
 
@@ -89,12 +89,14 @@ async def basic_auth_middleware(request: Request, call_next):
     return _unauthorized_response()
 
 # ── API routes ───────────────────────────────────────────────────
+app.include_router(auth.router)
 app.include_router(ingest.router)
 app.include_router(chat.router)
 app.include_router(wiki.router)
 app.include_router(conflicts.router)
 app.include_router(audit_route.router)
 app.include_router(settings_route.router)
+app.include_router(usage.router)
 
 # ── Startup checks ───────────────────────────────────────────────
 async def _check_llm_connection() -> dict:

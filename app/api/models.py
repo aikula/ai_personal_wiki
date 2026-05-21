@@ -227,3 +227,62 @@ class UpdateSettingsRequest(BaseModel):
     llm_api_key: str | None = None
     llm_model: str | None = None
     temperature: float | None = None
+
+
+# ─────────────────────────────────────────────
+# Auth
+# ─────────────────────────────────────────────
+
+class RegisterRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+    password: str = Field(min_length=8, max_length=128)
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class UserOut(BaseModel):
+    id: str
+    email: str
+    is_admin: bool
+    is_active: bool
+
+
+class WorkspaceOut(BaseModel):
+    id: str
+    name: str
+    slug: str
+
+
+class CreditOut(BaseModel):
+    daily: dict
+    welcome: dict
+
+
+class RegisterResponse(BaseModel):
+    user: UserOut
+    token: str
+    workspace: WorkspaceOut
+
+
+class LoginResponse(BaseModel):
+    user: UserOut
+    token: str
+
+
+class LogoutResponse(BaseModel):
+    ok: bool
+
+
+class AuthMeResponse(BaseModel):
+    user: UserOut
+    workspace: WorkspaceOut | None
+    credits: CreditOut | None
+
+
+class UsageResponse(BaseModel):
+    daily: dict
+    welcome: dict
+    recent_events: list[dict]
