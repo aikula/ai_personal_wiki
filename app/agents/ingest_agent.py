@@ -37,10 +37,26 @@ from app.core.large_source_ingest import (
 )
 from app.core.linter import WikiLinter
 from app.core.llm_client import LLMClient
-from app.core.raw_sources import RawSourceError, list_raw_source_files, read_raw_source_file
+from app.core.raw_sources import (
+    RawSourceError,
+    list_raw_source_files,
+    read_raw_source_file,
+)
 from app.core.token_budget import ContextBudget
-from app.core.utils import auto_link, normalize_wikilinks, validate_wikilinks, now_iso
-from app.core.wiki_fs import ConflictEntry, IngestLog, SourceCard, WikiFS, WikiPage
+from app.core.utils import (
+    auto_link,
+    normalize_wikilinks,
+    now_iso,
+    validate_wikilinks,
+)
+from app.core.wiki_fs import (
+    Claim,
+    ConflictEntry,
+    IngestLog,
+    SourceCard,
+    WikiFS,
+    WikiPage,
+)
 
 logger = logging.getLogger("wiki.ingest")
 
@@ -239,7 +255,7 @@ print(json.dumps(result))
                 if existing_page:
                     existing_content = existing_page.raw
             char_limit = self._char_limit_for_type(planned.page_type)
-            source_sections_text = "\n\n---\n\n".join(planned.source_sections)[:3000]
+            source_sections_text = self._format_source_sections(planned.source_sections)
             existing_trimmed = existing_content[:2000]
             candidates = self.fs.build_link_candidates()
             link_lines = []
@@ -307,6 +323,27 @@ print(json.dumps(result))
             for u in pending_updates:
                 pages_updated.append(u["slug"])
         return pages_created, pages_updated, pages_superseded
+
+    def _format_source_sections(self, sections: list[str], max_chars: int | None = None) -> str:
+        """Fit relevant source fragments into Step 2 without falling back to full-source prefix."""
+        if not sections:
+            return "(no source sections assigned)"
+        limit = max_chars or min(self.settings.query.context_budget_chars, 16_000)
+        parts = []
+        used = 0
+        for section in sections:
+            text = section.strip()
+            if not text:
+                continue
+            separator = "\n\n---\n\n" if parts else ""
+            remaining = limit - used - len(separator)
+            if remaining <= 0:
+                break
+            if len(text) > remaining:
+                text = text[:max(0, remaining - 18)].rstrip() + "\n[TRUNCATED]"
+            parts.append(separator + text)
+            used += len(separator) + len(text)
+        return "".join(parts) if parts else "(no source sections assigned)"
 
     def _log_failed_ingest(self, analysis: AnalysisResult) -> None:
         self.fs.append_log(IngestLog(
@@ -485,6 +522,13 @@ print(json.dumps(result))
 
         # Step 4: Merge analysis
         merged = merge_analysis(chunk_results, source_id, raw_relative_path)
+        claims_files = self._persist_claims(
+            merged.all_claims,
+            source_id=source_id,
+            project=project,
+            raw_relative_path=raw_relative_path,
+            source_sha256=sha256,
+        )
 
         # Step 5: Generate pages (batch with limits)
         pages_created, pages_updated, pages_superseded, conflict_ids = (
@@ -497,6 +541,7 @@ print(json.dumps(result))
         card.pages_planned = [p["slug"] for p in merged.page_write_plan]
         card.pages_written = pages_created + pages_updated
         card.conflicts_opened = conflict_ids
+        card.claims_files = claims_files
         self.fs.write_source_card(card)
 
         # Step 7: Log and lint
@@ -573,21 +618,93 @@ print(json.dumps(result))
 
         # Convert to ChunkAnalysisResult
         candidate_slugs = []
+        page_sections: dict[str, list[str]] = {}
         for page_type in ("pages_to_create", "pages_to_update", "pages_to_supersede"):
             for page in data.get(page_type, []):
                 slug = page.get("slug", "")
                 if slug and slug not in candidate_slugs:
                     candidate_slugs.append(slug)
+                if slug:
+                    sections = page.get("source_sections") or [chunk.text]
+                    page_sections.setdefault(slug, [])
+                    for section in sections:
+                        if section and section not in page_sections[slug]:
+                            page_sections[slug].append(section)
+
+        claims = []
+        for idx, claim in enumerate(data.get("claims", []), start=1):
+            if not isinstance(claim, dict):
+                continue
+            c = dict(claim)
+            c.setdefault("claim_id", f"{source_id}#{chunk.chunk_id}-claim-{idx:03d}")
+            c.setdefault("source_id", source_id)
+            c.setdefault(
+                "source_path",
+                f"raw/{chunk.source_path}" if not chunk.source_path.startswith("raw/") else chunk.source_path,
+            )
+            c.setdefault("source_section", " > ".join(chunk.section_path))
+            c.setdefault("chunk_id", chunk.chunk_id)
+            if not c.get("related_slugs") and len(candidate_slugs) == 1:
+                c["related_slugs"] = [candidate_slugs[0]]
+            claims.append(c)
 
         return ChunkAnalysisResult(
             chunk_id=chunk.chunk_id,
             source_id=source_id,
             section_path=chunk.section_path,
             candidate_pages=candidate_slugs,
-            claims=data.get("claims", []),
+            page_sections=page_sections,
+            claims=claims,
             conflicts=data.get("conflicts", []),
             outcome="page" if candidate_slugs else "ignored",
         )
+
+    def _persist_claims(
+        self,
+        claims: list[dict],
+        source_id: str,
+        project: str,
+        raw_relative_path: str,
+        source_sha256: str,
+    ) -> list[str]:
+        written: list[str] = []
+        today = date.today().isoformat()
+        source_path = f"raw/{raw_relative_path}"
+        valid_statuses = {"active", "superseded", "contradicted", "unresolved", "ignored"}
+
+        for idx, data in enumerate(claims, start=1):
+            quote = str(data.get("quote") or "").strip()
+            normalized = str(data.get("normalized") or quote).strip()
+            if not normalized:
+                continue
+            if self.fs.find_duplicate_claim(normalized, source_id):
+                continue
+            chunk_id = str(data.get("chunk_id") or "chunk-000")
+            claim_id = str(data.get("claim_id") or f"{source_id}#{chunk_id}-claim-{idx:03d}")
+            status = str(data.get("status") or "active")
+            if status not in valid_statuses:
+                status = "active"
+            related_slugs = data.get("related_slugs") or []
+            if isinstance(related_slugs, str):
+                related_slugs = [related_slugs]
+            claim = Claim(
+                claim_id=claim_id,
+                source_id=source_id,
+                source_path=str(data.get("source_path") or source_path),
+                source_sha256=str(data.get("source_sha256") or source_sha256),
+                source_section=str(data.get("source_section") or ""),
+                quote=quote or normalized,
+                normalized=normalized,
+                related_slugs=list(related_slugs),
+                confidence=float(data.get("confidence", 1.0)),
+                status=status,
+                chunk_id=chunk_id,
+                project=project,
+                created=today,
+            )
+            path = self.fs.write_claim(claim)
+            written.append(path.relative_to(self.fs.wiki_dir).as_posix())
+        return written
 
     def _generate_from_merge(
         self,
@@ -611,20 +728,19 @@ print(json.dumps(result))
             if cid:
                 conflict_ids.append(cid)
 
-        # Check review threshold
         total_pages = len(merged.all_candidate_pages)
-        if total_pages > self.settings.ingest.require_review_if_pages_gt:
+        require_review = allow_draft and total_pages > self.settings.ingest.require_review_if_pages_gt
+        if require_review:
             logger.warning(
                 "Large source: %d pages planned exceeds review threshold (%d). "
-                "Creating draft for review.",
+                "Writing draft for review instead of applying pages.",
                 total_pages, self.settings.ingest.require_review_if_pages_gt,
             )
-            # For now, proceed with auto-write up to max_auto_write_pages
-            # TODO: implement draft mode for large sources
+            pending_draft: dict[str, str] = {}
 
         # Generate pages in batches
         for i, page_info in enumerate(merged.all_candidate_pages):
-            if i >= self.settings.ingest.max_auto_write_pages:
+            if not require_review and i >= self.settings.ingest.max_auto_write_pages:
                 logger.warning(
                     "Reached max_auto_write_pages limit (%d). "
                     "Remaining %d pages need manual ingest.",
@@ -638,16 +754,18 @@ print(json.dumps(result))
             existing = self.fs.read_page(slug)
             action = "update" if existing else "create"
 
-            # For large sources, we generate content from the full source
-            # but focus on relevant sections
             try:
                 page_meta, page_content = self._generate_single_page(
                     slug=slug,
                     project=project,
-                    source_content=source_content,
+                    source_sections=page_info.get("source_sections", []),
+                    source_file=merged.source_path,
                     existing_content=existing.raw if existing else "",
                     action=action,
                 )
+                if require_review:
+                    pending_draft[slug] = render_page_raw(page_meta, page_content)
+                    continue
                 self.fs.write_page(
                     slug=slug,
                     meta=page_meta,
@@ -661,19 +779,42 @@ print(json.dumps(result))
             except Exception as exc:
                 logger.error("Failed to generate page %s: %s", slug, exc)
 
+        if require_review and pending_draft:
+            draft_id = f"large-ingest-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+            self.fs.create_draft(
+                draft_id=draft_id,
+                plan={
+                    "summary": f"{len(pending_draft)} page(s) planned from large source {merged.source_path}",
+                    "source_file": merged.source_path,
+                    "project": project,
+                    "review_reason": (
+                        f"planned pages {total_pages} exceed threshold "
+                        f"{self.settings.ingest.require_review_if_pages_gt}"
+                    ),
+                    "actions": [
+                        {"slug": slug, "action": "update" if self.fs.read_page(slug) else "create"}
+                        for slug in pending_draft
+                    ],
+                },
+                pages=pending_draft,
+                conflicts=merged.all_conflicts,
+            )
+
         return pages_created, pages_updated, pages_superseded, conflict_ids
 
     def _generate_single_page(
         self,
         slug: str,
         project: str,
-        source_content: str,
+        source_sections: list[str],
+        source_file: str,
         existing_content: str,
         action: str,
     ) -> tuple[dict, str]:
         """Generate a single wiki page from source content."""
         from app.agents.ingest_helpers import (
-            build_system_prompt, parse_json_response,
+            build_system_prompt,
+            parse_json_response,
         )
         from app.agents.ingest_prompts import STEP2_PROMPT, STEP2_SYSTEM
 
@@ -699,13 +840,12 @@ print(json.dumps(result))
             link_lines.append(f"- [[{c['slug']}]] — {c['title']}; aliases: {alias_str}")
         link_candidates_text = "\n".join(link_lines) if link_lines else "(no candidates yet)"
 
-        # Trim source content to fit budget
-        source_trimmed = self.budget.trim(source_content, "wiki_context")
+        source_sections_text = self._format_source_sections(source_sections)
 
         prompt = STEP2_PROMPT.format(
             planned_page_json=json.dumps(planned_page, ensure_ascii=False, indent=2),
-            source_file=slug,
-            source_sections=source_trimmed[:3000],
+            source_file=source_file,
+            source_sections=source_sections_text,
             existing_content=existing_content[:2000],
             link_candidates=link_candidates_text,
             today=today,

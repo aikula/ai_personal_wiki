@@ -1,8 +1,15 @@
+from base64 import b64encode
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.api.main import app as fastapi_app
-from app.api.main import _check_llm_connection
+from app.api.main import (
+    _check_auth_config,
+    _check_llm_connection,
+)
+from app.api.main import (
+    app as fastapi_app,
+)
 from app.config import Settings
 
 
@@ -31,6 +38,35 @@ async def test_health(client):
     data = resp.json()
     assert data["status"] == "ok"
     assert "llm" in data
+
+
+@pytest.mark.asyncio
+async def test_basic_auth_blocks_api_when_enabled(client, test_settings):
+    test_settings.auth.enabled = True
+    test_settings.auth.username = "admin"
+    test_settings.auth.password = "secret"
+
+    resp = await client.get("/api/wiki/tree")
+    assert resp.status_code == 401
+    assert resp.headers["www-authenticate"].startswith("Basic")
+
+
+@pytest.mark.asyncio
+async def test_basic_auth_accepts_valid_credentials(client, test_settings):
+    test_settings.auth.enabled = True
+    test_settings.auth.username = "admin"
+    test_settings.auth.password = "secret"
+    token = b64encode(b"admin:secret").decode("ascii")
+
+    resp = await client.get("/api/wiki/tree", headers={"Authorization": f"Basic {token}"})
+    assert resp.status_code == 200
+
+
+def test_basic_auth_requires_credentials_when_enabled():
+    settings = Settings()
+    settings.auth.enabled = True
+    with pytest.raises(RuntimeError):
+        _check_auth_config(settings)
 
 
 @pytest.mark.asyncio

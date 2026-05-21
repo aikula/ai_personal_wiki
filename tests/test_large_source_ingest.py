@@ -6,10 +6,7 @@ import pytest
 
 from app.config import Settings
 from app.core.large_source_ingest import (
-    Chunk,
     ChunkAnalysisResult,
-    DocumentOutline,
-    MergeAnalysisResult,
     chunk_by_outline,
     merge_analysis,
     parse_outline,
@@ -147,6 +144,19 @@ class TestChunking:
         assert len(child_chunks) >= 1
         assert "Parent" in child_chunks[0].section_path
 
+    def test_section_path_uses_nearest_parent_hierarchy(self, settings):
+        content = (
+            "# A\n\n"
+            "## B\n\nB text.\n\n"
+            "## C\n\nC text.\n\n"
+            "### D\n\nD text."
+        )
+        outline = parse_outline(content)
+        chunks = chunk_by_outline(outline, content, settings)
+
+        d_chunk = next(c for c in chunks if c.section_path[-1] == "D")
+        assert d_chunk.section_path == ["A", "C", "D"]
+
     def test_chunk_preserves_content(self, settings):
         content = "# Test\n\nImportant content that must not be lost."
         outline = parse_outline(content)
@@ -154,6 +164,17 @@ class TestChunking:
 
         combined = "".join(c.text for c in chunks)
         assert "Important content" in combined
+
+    def test_split_chunks_preserve_source_path(self, settings):
+        settings.ingest.chunk_max_chars = 500
+        settings.ingest.chunk_min_chars = 100
+        settings.ingest.chunk_target_chars = 300
+        content = "# Main\n\n" + "\n\n".join(f"paragraph {i} " + "x" * 180 for i in range(8))
+        outline = parse_outline(content, "raw/project/source.md")
+        chunks = chunk_by_outline(outline, content, settings)
+
+        assert len(chunks) > 1
+        assert all(c.source_path == "raw/project/source.md" for c in chunks)
 
 
 # ── Merge analysis ──────────────────────────────────────────────
@@ -185,6 +206,26 @@ class TestMergeAnalysis:
         # Pages deduplicated by slug
         assert len(merged.all_candidate_pages) == 2
         assert len(merged.all_claims) == 2
+
+    def test_merge_keeps_page_source_sections(self):
+        results = [
+            ChunkAnalysisResult(
+                chunk_id="chunk-001", source_id="test/doc",
+                section_path=["A"],
+                candidate_pages=["test/a"],
+                page_sections={"test/a": ["relevant section A"]},
+            ),
+            ChunkAnalysisResult(
+                chunk_id="chunk-002", source_id="test/doc",
+                section_path=["B"],
+                candidate_pages=["test/a"],
+                page_sections={"test/a": ["relevant section B"]},
+            ),
+        ]
+        merged = merge_analysis(results, "test/doc", "raw/test/doc.md")
+
+        page = merged.all_candidate_pages[0]
+        assert page["source_sections"] == ["relevant section A", "relevant section B"]
 
     def test_duplicate_claims_deduped(self):
         results = [

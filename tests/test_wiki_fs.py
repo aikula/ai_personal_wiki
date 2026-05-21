@@ -461,6 +461,23 @@ class TestReadPageSection:
         assert section is not None
         assert "Final content" in section.content
 
+    def test_read_parent_section_includes_nested_subsections(self, fs):
+        content = (
+            "# Page\n\n"
+            "## Deployment\n\nOverview.\n\n"
+            "### Docker\n\nDocker details.\n\n"
+            "### Env\n\nEnv details.\n\n"
+            "## Other\n\nOther details."
+        )
+        fs.write_page("test/nested", meta=self._meta(), content=content)
+        section = fs.read_page_section("test/nested", "Deployment")
+
+        assert section is not None
+        assert "Overview" in section.content
+        assert "### Docker" in section.content
+        assert "Docker details" in section.content
+        assert "## Other" not in section.content
+
 
 # ── Multi Read Sections ────────────────────────────────────────
 
@@ -630,9 +647,9 @@ class TestSourceCards:
         all_cards = fs.list_source_cards()
         assert len(all_cards) == 2
 
-        projA_cards = fs.list_source_cards(project="projA")
-        assert len(projA_cards) == 1
-        assert projA_cards[0].project == "projA"
+        proja_cards = fs.list_source_cards(project="projA")
+        assert len(proja_cards) == 1
+        assert proja_cards[0].project == "projA"
 
     def test_source_card_file_exists(self, fs):
         from app.core.wiki_fs import SourceCard

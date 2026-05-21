@@ -2,10 +2,9 @@
 test_claims.py — Tests for the claims layer (Phase 3).
 """
 
-from datetime import date
-
 import pytest
 
+from app.agents.ingest_agent import IngestAgent
 from app.config import Settings
 from app.core.wiki_fs import Claim, WikiFS
 
@@ -20,6 +19,11 @@ def settings(tmp_path):
 @pytest.fixture
 def fs(settings):
     return WikiFS(settings)
+
+
+@pytest.fixture
+def ingest_agent(fs, settings):
+    return IngestAgent(fs, llm=None, interpreter=None, settings=settings)
 
 
 def _make_claim(**overrides):
@@ -76,6 +80,29 @@ class TestClaimWriteRead:
         # Should be under wiki/_claims/<project>/<source>/<chunk>/
         assert "_claims" in str(path)
         assert "myproj" in str(path)
+
+
+class TestIngestClaimPersistence:
+    def test_persist_claims_writes_claim_files(self, ingest_agent, fs):
+        written = ingest_agent._persist_claims(
+            [{
+                "quote": "Fact from chunk",
+                "normalized": "Fact from chunk normalized",
+                "source_section": "## Chunk",
+                "related_slugs": ["proj/page"],
+                "confidence": 0.8,
+                "chunk_id": "chunk-001",
+            }],
+            source_id="proj/source",
+            project="proj",
+            raw_relative_path="proj/source.md",
+            source_sha256="sha",
+        )
+
+        assert len(written) == 1
+        claims = fs.list_claims(source_id="proj/source")
+        assert len(claims) == 1
+        assert claims[0].related_slugs == ["proj/page"]
 
 
 # ── List claims ─────────────────────────────────────────────────

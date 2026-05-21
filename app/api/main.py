@@ -13,19 +13,21 @@ Mounts:
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
+import secrets
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from app.api.dependencies import get_llm_client, get_settings
 from app.api.routes import audit as audit_route
 from app.api.routes import chat, conflicts, ingest, wiki
 from app.api.routes import settings as settings_route
-from app.api.dependencies import get_llm_client, get_settings
-from app.config import setup_logging
+from app.config import Settings, setup_logging
 
 setup_logging()
 logger = logging.getLogger("wiki.api")
@@ -43,6 +45,48 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _check_auth_config(settings: Settings) -> None:
+    if settings.auth.enabled and (
+        not settings.auth.username or not settings.auth.password
+    ):
+        raise RuntimeError(
+            "WIKI_AUTH_ENABLED=true requires WIKI_AUTH_USERNAME and WIKI_AUTH_PASSWORD"
+        )
+
+
+def _unauthorized_response() -> Response:
+    return Response(
+        status_code=401,
+        headers={"WWW-Authenticate": 'Basic realm="Wiki Engine"'},
+    )
+
+
+def _basic_auth_valid(header: str, settings: Settings) -> bool:
+    if not header.startswith("Basic "):
+        return False
+    try:
+        decoded = base64.b64decode(header[6:], validate=True).decode("utf-8")
+    except Exception:
+        return False
+    username, sep, password = decoded.partition(":")
+    if not sep:
+        return False
+    return (
+        secrets.compare_digest(username, settings.auth.username)
+        and secrets.compare_digest(password, settings.auth.password)
+    )
+
+
+@app.middleware("http")
+async def basic_auth_middleware(request: Request, call_next):
+    settings = get_settings()
+    if not settings.auth.enabled:
+        return await call_next(request)
+    if _basic_auth_valid(request.headers.get("authorization", ""), settings):
+        return await call_next(request)
+    return _unauthorized_response()
 
 # ── API routes ───────────────────────────────────────────────────
 app.include_router(ingest.router)
@@ -86,6 +130,8 @@ async def _check_llm_connection() -> dict:
 
 @app.on_event("startup")
 async def startup_checks() -> None:
+    settings = get_settings()
+    _check_auth_config(settings)
     app.state.llm_status = await _check_llm_connection()
 
 # ── Health check ─────────────────────────────────────────────────

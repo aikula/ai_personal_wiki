@@ -18,20 +18,21 @@ import json
 import logging
 import re
 import shutil
-from typing import TYPE_CHECKING
-try:
-    from markitdown import MarkItDown
-    MARKITDOWN_AVAILABLE = True
-except ImportError:
-    MARKITDOWN_AVAILABLE = False
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.core.safe_page_updates import PageUpdateDiff
 
 import frontmatter  # python-frontmatter
+
+try:
+    from markitdown import MarkItDown
+    MARKITDOWN_AVAILABLE = True
+except ImportError:
+    MARKITDOWN_AVAILABLE = False
 
 from app.config import Settings
 from app.core.utils import (
@@ -96,6 +97,14 @@ def _validate_frontmatter(meta: dict) -> None:
     missing = REQUIRED_FRONTMATTER - set(meta.keys())
     if missing:
         raise FrontmatterError(f"Отсутствуют обязательные поля frontmatter: {missing}")
+
+
+def _next_heading_at_or_above(content: str, start: int, level: int) -> re.Match | None:
+    heading_re = re.compile(r"^(#{1,6})\s+.+$", re.MULTILINE)
+    for match in heading_re.finditer(content, start):
+        if len(match.group(1)) <= level:
+            return match
+    return None
 
 
 @dataclass
@@ -660,9 +669,9 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
             text = match.group(2).strip()
             anchor = heading_to_anchor(text)
 
-            # Find content until next heading of same or higher level
+            # Find content until next heading of same or higher level.
             start = match.end()
-            next_heading = heading_pattern.search(page.content, start)
+            next_heading = _next_heading_at_or_above(page.content, start, level)
             if next_heading:
                 section_text = page.content[start:next_heading.start()].strip()
             else:
@@ -725,8 +734,13 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
             return None
 
         match = matches[target_idx]
+        level = len(match.group(1))
         start = match.end()
-        next_match = matches[target_idx + 1] if target_idx + 1 < len(matches) else None
+        next_match = None
+        for candidate in matches[target_idx + 1:]:
+            if len(candidate.group(1)) <= level:
+                next_match = candidate
+                break
 
         if next_match:
             section_text = page.content[start:next_match.start()].strip()

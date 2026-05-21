@@ -87,6 +87,13 @@ class AuditSettings:
 
 
 @dataclass
+class AuthSettings:
+    enabled: bool = False
+    username: str = ""
+    password: str = ""
+
+
+@dataclass
 class Settings:
     language: str = "ru"
     llm: LLMSettings = field(default_factory=LLMSettings)
@@ -94,6 +101,7 @@ class Settings:
     ingest: IngestSettings = field(default_factory=IngestSettings)
     query: QuerySettings = field(default_factory=QuerySettings)
     audit: AuditSettings = field(default_factory=AuditSettings)
+    auth: AuthSettings = field(default_factory=AuthSettings)
     wiki_data_path: str = "./wiki-data"
 
     @classmethod
@@ -121,6 +129,17 @@ class Settings:
         wiki_path = os.environ.get("WIKI_DATA_PATH", "")
         if wiki_path:
             settings.wiki_data_path = wiki_path
+
+        _apply_env_bool(os.environ.get("WIKI_AUTH_ENABLED"), lambda v: setattr(settings.auth, "enabled", v))
+        _apply_env_str(os.environ.get("WIKI_AUTH_USERNAME"), lambda v: setattr(settings.auth, "username", v))
+        _apply_env_str(os.environ.get("WIKI_AUTH_PASSWORD"), lambda v: setattr(settings.auth, "password", v))
+        _apply_env_int(os.environ.get("WIKI_CHUNK_MIN_CHARS"), lambda v: setattr(settings.ingest, "chunk_min_chars", v))
+        _apply_env_int(os.environ.get("WIKI_CHUNK_TARGET_CHARS"), lambda v: setattr(settings.ingest, "chunk_target_chars", v))
+        _apply_env_int(os.environ.get("WIKI_CHUNK_MAX_CHARS"), lambda v: setattr(settings.ingest, "chunk_max_chars", v))
+        _apply_env_int(
+            os.environ.get("WIKI_LARGE_SOURCE_THRESHOLD_CHARS"),
+            lambda v: setattr(settings.ingest, "large_source_threshold_chars", v),
+        )
 
         return settings
 
@@ -160,6 +179,7 @@ def _apply_dict(settings: Settings, data: dict) -> None:
         "ingest": settings.ingest,
         "query": settings.query,
         "audit": settings.audit,
+        "auth": settings.auth,
     }
     for key, value in data.items():
         if key == "language":
@@ -171,3 +191,23 @@ def _apply_dict(settings: Settings, data: dict) -> None:
             for k, v in value.items():
                 if hasattr(section, k):
                     setattr(section, k, v)
+
+
+def _apply_env_str(value: str | None, setter) -> None:
+    if value:
+        setter(value)
+
+
+def _apply_env_int(value: str | None, setter) -> None:
+    if not value:
+        return
+    try:
+        setter(int(value))
+    except ValueError:
+        logger.warning("Ignoring invalid integer env value: %s", value)
+
+
+def _apply_env_bool(value: str | None, setter) -> None:
+    if value is None or value == "":
+        return
+    setter(value.lower() in {"1", "true", "yes", "on"})

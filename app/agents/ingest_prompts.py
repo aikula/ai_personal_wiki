@@ -39,8 +39,9 @@ Analyze the source and produce AnalysisResult JSON with:
 2. pages_to_update: list of PlannedPage for existing pages to update
 3. pages_to_supersede: list of PlannedPage where existing page is outdated
 4. conflicts: list of DetectedConflict for contradictions with existing wiki
-5. skills_triggered: which skills from skills.md influenced this analysis
-6. analysis_notes: brief summary of what you found
+5. claims: factual claims extracted from this source/chunk
+6. skills_triggered: which skills from skills.md influenced this analysis
+7. analysis_notes: brief summary of what you found
 
 {language_rule}
 
@@ -50,6 +51,8 @@ Rules:
   Use lowercase, hyphens for spaces. Example: "myapp/storage/redis-cache"
 - For pages_to_update: slug MUST match existing page slug exactly
 - source_sections: copy relevant text fragments verbatim (max 1500 chars each)
+- claims: extract small factual units with quote, normalized text, source_section,
+  related_slugs, confidence, and status="active"
 - If two projects implement same thing differently: conflict_type = "cross_project_difference"
   is_cross_project = true — this is NOT a real conflict, do not block
 - confidence: your certainty this page deserves to exist (0.0-1.0)

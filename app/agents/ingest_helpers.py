@@ -155,6 +155,10 @@ ANALYSIS_SCHEMA_HINT = """{
      "context_existing": str, "context_source": str,
      "suggested_options": [str], "is_cross_project": bool}
   ],
+  "claims": [
+    {"quote": str, "normalized": str, "source_section": str,
+     "related_slugs": [str], "confidence": float, "status": "active"}
+  ],
   "skills_triggered": [str],
   "analysis_notes": str
 }"""

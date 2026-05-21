@@ -1,13 +1,4 @@
-"""
-large_source_ingest.py — Outline parser, chunking, and merge analysis
-for processing large source documents (100K+ chars, up to 1M).
-
-Flow:
-  1. parse_outline(source) → structured document outline
-  2. chunk_by_outline(outline, source, settings) → list of chunks
-  3. chunk_result dataclass per chunk (filled by ingest agent)
-  4. merge_analysis(chunk_results) → deduped claims, conflicts, page plan
-"""
+"""Outline parser, chunking, and merge analysis for large source ingest."""
 
 from __future__ import annotations
 
@@ -19,25 +10,18 @@ from app.config import Settings
 
 logger = logging.getLogger("wiki.ingest.large")
 
-
-# ─────────────────────────────────────────────
-# Data models
-# ─────────────────────────────────────────────
-
 @dataclass
 class OutlineItem:
-    """Single heading/section in a document outline."""
     text: str
-    level: int                # 1-6 (markdown heading level)
-    start_pos: int            # character offset in source
-    end_pos: int              # character offset (start of next heading or EOF)
-    char_count: int           # content length (excluding heading itself)
-    preview: str = ""         # first 200 chars of section content
+    level: int
+    start_pos: int
+    end_pos: int
+    char_count: int
+    preview: str = ""
 
 
 @dataclass
 class DocumentOutline:
-    """Full outline of a source document."""
     source_path: str
     total_chars: int
     items: list[OutlineItem] = field(default_factory=list)
@@ -49,47 +33,40 @@ class DocumentOutline:
 
 @dataclass
 class Chunk:
-    """A chunk of source text ready for analysis."""
-    chunk_id: str                     # e.g. "chunk-001"
+    chunk_id: str
     source_path: str
-    section_path: list[str]           # heading hierarchy, e.g. ["Deployment", "Redis"]
+    section_path: list[str]
     text: str
     char_count: int
-    split_reason: str = "outline"     # "outline" | "hard_max" | "paragraph" | "sentence"
-    headings: list[dict] = field(default_factory=list)  # [{text, level}]
+    split_reason: str = "outline"
+    headings: list[dict] = field(default_factory=list)
 
 
 @dataclass
 class ChunkAnalysisResult:
-    """Typed result from analyzing a single chunk. Filled by LLM."""
     chunk_id: str
     source_id: str
     section_path: list[str]
-    candidate_pages: list[str] = field(default_factory=list)   # slugs to create/update
-    claims: list[dict] = field(default_factory=list)           # extracted claims
-    conflicts: list[dict] = field(default_factory=list)        # detected conflicts
-    ignored_sections: list[str] = field(default_factory=list)  # sections intentionally skipped
-    outcome: str = "pending"          # "page" | "claim" | "conflict" | "ignored" | "failed"
+    candidate_pages: list[str] = field(default_factory=list)
+    page_sections: dict[str, list[str]] = field(default_factory=dict)
+    claims: list[dict] = field(default_factory=list)
+    conflicts: list[dict] = field(default_factory=list)
+    ignored_sections: list[str] = field(default_factory=list)
+    outcome: str = "pending"
 
 
 @dataclass
 class MergeAnalysisResult:
-    """Combined result from all chunk analyses."""
     source_id: str
     source_path: str
     total_chunks: int
     chunks_processed: int
     chunks_failed: int
-    all_candidate_pages: list[dict] = field(default_factory=list)   # deduped by slug
+    all_candidate_pages: list[dict] = field(default_factory=list)
     all_claims: list[dict] = field(default_factory=list)
     all_conflicts: list[dict] = field(default_factory=list)
-    triage_report: str = ""           # human-readable summary
+    triage_report: str = ""
     page_write_plan: list[dict] = field(default_factory=list)
-
-
-# ─────────────────────────────────────────────
-# Outline parser
-# ─────────────────────────────────────────────
 
 def parse_outline(source_content: str, source_path: str = "") -> DocumentOutline:
     """
@@ -118,7 +95,6 @@ def parse_outline(source_content: str, source_path: str = "") -> DocumentOutline
             items=items,
         )
 
-    # Last resort: treat entire document as one section
     preview = source_content[:200].replace("\n", " ")
     return DocumentOutline(
         source_path=source_path,
@@ -135,7 +111,6 @@ def parse_outline(source_content: str, source_path: str = "") -> DocumentOutline
 
 
 def _parse_markdown_headings(content: str) -> list[OutlineItem]:
-    """Extract outline items from markdown headings."""
     heading_re = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
     matches = list(heading_re.finditer(content))
 
@@ -148,7 +123,6 @@ def _parse_markdown_headings(content: str) -> list[OutlineItem]:
         text = match.group(2).strip()
         start = match.end()
 
-        # End is start of next heading or end of content
         if i + 1 < len(matches):
             end = matches[i + 1].start()
         else:
@@ -170,7 +144,6 @@ def _parse_markdown_headings(content: str) -> list[OutlineItem]:
 
 
 def _parse_paragraph_groups(content: str, min_chars: int = 200) -> list[OutlineItem]:
-    """Fallback: group content by paragraph blocks."""
     paragraphs = re.split(r"\n\n+", content)
     items = []
     pos = 0
@@ -186,7 +159,6 @@ def _parse_paragraph_groups(content: str, min_chars: int = 200) -> list[OutlineI
             start = pos
         end = start + len(para)
 
-        # Generate a synthetic title from first sentence
         first_sentence = para.split(".")[0][:80]
         title = first_sentence if first_sentence else f"Section at char {start}"
 
@@ -202,26 +174,11 @@ def _parse_paragraph_groups(content: str, min_chars: int = 200) -> list[OutlineI
 
     return items
 
-
-# ─────────────────────────────────────────────
-# Chunking
-# ─────────────────────────────────────────────
-
 def chunk_by_outline(
     outline: DocumentOutline,
     source_content: str,
     settings: Settings,
 ) -> list[Chunk]:
-    """
-    Split source content into chunks based on outline.
-
-    Respects chunk size limits:
-    - If a section exceeds chunk_max_chars, split at natural boundaries
-    - Never split mid-sentence, mid-code-fence, or mid-table
-    - Each chunk tracks its heading hierarchy (section_path)
-
-    Returns list of Chunk objects.
-    """
     chunks = []
     ingest = settings.ingest
     target = ingest.chunk_target_chars
@@ -232,7 +189,6 @@ def chunk_by_outline(
         section_text = source_content[item.start_pos:item.end_pos]
 
         if len(section_text) <= max_chars:
-            # Section fits in one chunk
             section_path = _build_section_path(outline, item)
             chunks.append(Chunk(
                 chunk_id=f"chunk-{len(chunks)+1:03d}",
@@ -244,10 +200,10 @@ def chunk_by_outline(
                 headings=[{"text": item.text, "level": item.level}],
             ))
         else:
-            # Section needs splitting
             sub_chunks = _split_section(
                 section_text=section_text,
                 section_path=_build_section_path(outline, item),
+                source_path=outline.source_path,
                 heading_text=item.text,
                 heading_level=item.level,
                 target_chars=target,
@@ -266,27 +222,21 @@ def chunk_by_outline(
 
 def _build_section_path(outline: DocumentOutline, item: OutlineItem) -> list[str]:
     """Build heading hierarchy for a section item."""
-    path = [item.text]
-    # Find parent headings (higher-level headings before this item)
+    stack: list[OutlineItem] = []
     for other in outline.items:
         if other.start_pos >= item.start_pos:
             break
-        if other.level < item.level:
-            # This could be a parent — keep the most recent at each level
-            path.insert(0, other.text)
-    # Deduplicate while preserving order
-    seen = set()
-    unique = []
-    for p in path:
-        if p not in seen:
-            seen.add(p)
-            unique.append(p)
-    return unique
+        while stack and stack[-1].level >= other.level:
+            stack.pop()
+        stack.append(other)
+    parents = [h.text for h in stack if h.level < item.level]
+    return [*parents, item.text]
 
 
 def _split_section(
     section_text: str,
     section_path: list[str],
+    source_path: str,
     heading_text: str,
     heading_level: int,
     target_chars: int,
@@ -320,17 +270,17 @@ def _split_section(
 
             if len(sub_text) > max_chars:
                 # Recursively split
-                sub_path = section_path + [sub_heading]
+                sub_path = [*section_path, sub_heading]
                 deeper = _split_section(
-                    sub_text, sub_path, sub_heading, sub_level,
+                    sub_text, sub_path, source_path, sub_heading, sub_level,
                     target_chars, max_chars, min_chars, base_index + len(chunks),
                 )
                 chunks.extend(deeper)
             else:
                 chunks.append(Chunk(
                     chunk_id=f"chunk-{base_index + len(chunks) + 1:03d}",
-                    source_path="",  # filled by caller
-                    section_path=section_path + [sub_heading],
+                    source_path=source_path,
+                    section_path=[*section_path, sub_heading],
                     text=sub_text,
                     char_count=len(sub_text),
                     split_reason="outline",
@@ -353,7 +303,7 @@ def _split_section(
             if len(current_text) >= min_chars:
                 chunks.append(Chunk(
                     chunk_id=f"chunk-{base_index + len(chunks) + 1:03d}",
-                    source_path="",
+                    source_path=source_path,
                     section_path=section_path,
                     text=current_text,
                     char_count=len(current_text),
@@ -365,7 +315,7 @@ def _split_section(
     if current_text:
         chunks.append(Chunk(
             chunk_id=f"chunk-{base_index + len(chunks) + 1:03d}",
-            source_path="",
+            source_path=source_path,
             section_path=section_path,
             text=current_text,
             char_count=len(current_text),
@@ -471,8 +421,12 @@ def merge_analysis(
                     "slug": page,
                     "source_chunks": [],
                     "claims": [],
+                    "source_sections": [],
                 }
             pages_by_slug[page]["source_chunks"].append(cr.chunk_id)
+            for section in cr.page_sections.get(page, []):
+                if section and section not in pages_by_slug[page]["source_sections"]:
+                    pages_by_slug[page]["source_sections"].append(section)
 
     # Deduplicate claims
     seen_claims: set[str] = set()
@@ -484,6 +438,9 @@ def merge_analysis(
             if claim_key not in seen_claims:
                 seen_claims.add(claim_key)
                 all_claims.append(claim)
+            for slug in claim.get("related_slugs", []):
+                if slug in pages_by_slug and claim not in pages_by_slug[slug]["claims"]:
+                    pages_by_slug[slug]["claims"].append(claim)
 
     # Collect conflicts
     all_conflicts = []

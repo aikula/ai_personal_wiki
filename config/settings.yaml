@@ -46,3 +46,8 @@ audit:
   confidence_warn_threshold: 0.4
   stale_days_threshold: 90
   run_llm_audit_default: false
+
+auth:
+  enabled: false
+  username: ""
+  password: ""
