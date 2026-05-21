@@ -139,7 +139,7 @@ class QueryAgent:
         question_type, keywords = self._classify(question)
 
         if question_type in ("factual", "comparison"):
-            pages_read = self._retrieve_pages(keywords, session.project_filter)
+            pages_read = self._retrieve_pages(keywords, session.project_filter, top_k=20)
             wiki_context = self._build_wiki_context(pages_read)
             skills = self._skills_query_rules()
             agents_md = self._read_agents_md()
@@ -196,8 +196,68 @@ class QueryAgent:
         keywords: list[str],
         session: ChatSession,
     ) -> tuple[str, list[str], int]:
-        pages = self._retrieve_pages(keywords, session.project_filter, top_k=4)
-        wiki_context = self._build_wiki_context(pages)
+        pages = self._retrieve_pages(keywords, session.project_filter, top_k=20)
+
+        # Index-first: read outlines to select best pages before reading full content
+        selected_pages = []
+        for page in pages[:10]:
+            outline = self.fs.read_page_outline(page.slug)
+            if outline:
+                # Check if outline headings or synopsis match question keywords
+                kw_lower = [k.lower() for k in keywords]
+                heading_match = any(
+                    any(kw in h["text"].lower() for kw in kw_lower)
+                    for h in outline.headings
+                )
+                synopsis_match = any(
+                    kw in outline.synopsis.lower() for kw in kw_lower
+                )
+                if heading_match or synopsis_match:
+                    selected_pages.append(page)
+                elif len(selected_pages) < 3:
+                    selected_pages.append(page)
+            else:
+                selected_pages.append(page)
+
+        if not selected_pages:
+            selected_pages = pages[:4]
+
+        wiki_context = self._build_wiki_context(selected_pages)
+        answer = self._generate_answer(question, wiki_context, session)
+        return answer, [p.slug for p in selected_pages], 1
+
+    def _policy_comparison(
+        self,
+        question: str,
+        keywords: list[str],
+        session: ChatSession,
+    ) -> tuple[str, list[str], int]:
+        pages = self._retrieve_pages(keywords, project=None, top_k=20)
+
+        by_project: dict[str, list[WikiPage]] = {}
+        for p in pages:
+            by_project.setdefault(p.project, []).append(p)
+
+        sections = []
+        for proj, proj_pages in sorted(by_project.items()):
+            # Index-first: select best pages per project via outlines
+            best = []
+            for page in proj_pages[:5]:
+                outline = self.fs.read_page_outline(page.slug)
+                if outline:
+                    kw_lower = [k.lower() for k in keywords]
+                    match = any(
+                        any(kw in h["text"].lower() for kw in kw_lower)
+                        for h in outline.headings
+                    ) or any(kw in outline.synopsis.lower() for kw in kw_lower)
+                    if match or len(best) < 2:
+                        best.append(page)
+                else:
+                    best.append(page)
+
+            content = "\n---\n".join(pp.raw for pp in best)
+            sections.append(f"### Project: {proj}\n{content}")
+        wiki_context = "\n\n".join(sections)
 
         answer = self._generate_answer(question, wiki_context, session)
         return answer, [p.slug for p in pages], 1
@@ -287,13 +347,37 @@ class QueryAgent:
                 page = self.fs.read_page(slug)
                 if page:
                     pages_read.append(slug)
-                    preview = page.raw[:1500]
+                    outline = self.fs.read_page_outline(slug)
+                    if outline:
+                        preview = (
+                            f"Title: {outline.title}\n"
+                            f"Synopsis: {outline.synopsis}\n"
+                            f"Headings: {', '.join(h['text'] for h in outline.headings)}\n"
+                            f"Tags: {', '.join(outline.tags)}\n"
+                        )
+                    else:
+                        preview = page.raw[:1500]
                     scratchpad.append(
                         f"[iter {iteration+1}] read_page({slug!r}) → {preview}"
                     )
                 else:
                     scratchpad.append(
                         f"[iter {iteration+1}] read_page({slug!r}) → NOT FOUND"
+                    )
+
+            elif action == "read_section":
+                slug = inp.get("slug", "")
+                heading = inp.get("heading", "")
+                section = self.fs.read_page_section(slug, heading)
+                if section:
+                    pages_read.append(slug)
+                    scratchpad.append(
+                        f"[iter {iteration+1}] read_section({slug!r}, {heading!r}) → "
+                        f"{section.content[:1500]}"
+                    )
+                else:
+                    scratchpad.append(
+                        f"[iter {iteration+1}] read_section({slug!r}, {heading!r}) → NOT FOUND"
                     )
 
             elif action == "execute_code":
@@ -424,14 +508,80 @@ class QueryAgent:
             logger.warning("Classification failed, defaulting to exploratory")
             return "exploratory", question.split()[:5]
 
+    def _expand_query(self, question: str) -> list[str]:
+        """
+        Deterministic query expansion: generate additional search terms
+        without calling LLM. Uses keyword extraction, common synonyms,
+        and project detection.
+
+        Returns list of expanded query strings to try.
+        """
+        expansions = [question]
+
+        # Extract key terms (nouns, technical terms)
+        words = question.lower().split()
+        stop_words = {
+            "что", "как", "где", "когда", "почему", "зачем", "какой",
+            "какие", "кто", "чем", "ли", "или", "и", "в", "на", "с",
+            "по", "для", "из", "у", "к", "о", "а", "но", "не",
+            "what", "how", "where", "when", "why", "which", "who",
+            "is", "are", "does", "do", "the", "a", "an", "in", "on",
+            "of", "for", "to", "with", "from", "about",
+        }
+        key_terms = [w.strip("?.,;:!\"'()") for w in words if w.lower() not in stop_words and len(w) > 2]
+
+        if key_terms:
+            expansions.append(" ".join(key_terms))
+
+        # Common technical term expansions
+        tech_expansions = {
+            "бд": ["database", "postgresql", "sqlite"],
+            "database": ["бд", "postgresql", "sqlite"],
+            "кеш": ["cache", "redis"],
+            "cache": ["кеш", "redis"],
+            "деплой": ["deploy", "deployment", "развёртывание"],
+            "deploy": ["деплой", "deployment", "развёртывание"],
+            "api": ["endpoint", "route", "маршрут"],
+            "фронтенд": ["frontend", "ui", "react"],
+            "frontend": ["фронтенд", "ui", "react"],
+            "бэкенд": ["backend", "fastapi", "server"],
+            "backend": ["бэкенд", "fastapi", "server"],
+        }
+        for term in key_terms:
+            if term.lower() in tech_expansions:
+                for expansion in tech_expansions[term.lower()]:
+                    expansions.append(expansion)
+
+        # Deduplicate while preserving order
+        seen = set()
+        unique = []
+        for q in expansions:
+            if q not in seen:
+                seen.add(q)
+                unique.append(q)
+        return unique
+
     def _retrieve_pages(
         self,
         keywords: list[str],
         project: str | None,
-        top_k: int = 5,
+        top_k: int = 20,
     ) -> list[WikiPage]:
         query = " ".join(keywords)
-        results = self.fs.search_pages(query, project=project)
+
+        # Try expanded queries if initial search is weak
+        results = self.fs.search_pages_weighted(query, project=project, top_k=top_k)
+
+        if len(results) < 3:
+            expansions = self._expand_query(query)
+            for expanded in expansions[1:]:
+                more = self.fs.search_pages_weighted(expanded, project=project, top_k=top_k)
+                for r in more:
+                    if r["slug"] not in {x["slug"] for x in results}:
+                        results.append(r)
+                if len(results) >= 3:
+                    break
+
         slugs = [r["slug"] for r in results[:top_k]]
         pages = []
         for slug in slugs:
