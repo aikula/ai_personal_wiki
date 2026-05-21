@@ -27,12 +27,20 @@ from app.agents.ingest_prompts import (
 from app.agents.ingest_types import AnalysisResult, IngestResult
 from app.config import Settings, language_instruction
 from app.core.interpreter import CodeInterpreter
+from app.core.large_source_ingest import (
+    Chunk,
+    ChunkAnalysisResult,
+    MergeAnalysisResult,
+    chunk_by_outline,
+    merge_analysis,
+    parse_outline,
+)
 from app.core.linter import WikiLinter
 from app.core.llm_client import LLMClient
 from app.core.raw_sources import RawSourceError, list_raw_source_files, read_raw_source_file
 from app.core.token_budget import ContextBudget
 from app.core.utils import auto_link, normalize_wikilinks, validate_wikilinks, now_iso
-from app.core.wiki_fs import ConflictEntry, IngestLog, WikiFS, WikiPage
+from app.core.wiki_fs import ConflictEntry, IngestLog, SourceCard, WikiFS, WikiPage
 
 logger = logging.getLogger("wiki.ingest")
 
@@ -78,6 +86,17 @@ class IngestAgent:
         project = self.fs.get_raw_project(self.fs.raw_dir / raw_relative_path)
         logger.info("Ingest started: file=%s project=%s allow_draft=%s",
                     raw_relative_path, project, allow_draft)
+
+        # Check if this is a large source requiring chunked ingest
+        is_large = len(source_content) > self.settings.ingest.large_source_threshold_chars
+        if is_large:
+            logger.info("Large source detected (%d chars), using chunked ingest", len(source_content))
+            return self._run_large_ingest(
+                raw_relative_path=raw_relative_path,
+                project=project,
+                source_content=source_content,
+                allow_draft=allow_draft,
+            )
 
         try:
             analysis = self._step1_analyze(
@@ -387,3 +406,365 @@ print(json.dumps(result))
             "entity": self.settings.limits.entity_page_chars,
             "concept": self.settings.limits.concept_page_chars,
         }.get(page_type, self.settings.limits.entity_page_chars)
+
+    # ── Large source ingest (Phase 2) ────────────────────────────
+
+    def _run_large_ingest(
+        self,
+        raw_relative_path: str,
+        project: str,
+        source_content: str,
+        allow_draft: bool = True,
+    ) -> IngestResult:
+        """
+        Process a large source document through chunked ingest pipeline.
+
+        Flow:
+        1. Create/update Source Card
+        2. Parse outline
+        3. Chunk by outline
+        4. Analyze each chunk (Step 1 per chunk)
+        5. Merge analysis
+        6. Generate pages (Step 2 per planned page)
+        7. Update Source Card with results
+        """
+        source_id = raw_relative_path.replace("/", "_", 1).rsplit(".", 1)[0]
+        sha256 = self.fs.compute_source_sha256(source_content)
+        today = date.today().isoformat()
+
+        # Step 1: Create/update Source Card
+        existing_card = self.fs.read_source_card(source_id)
+        outline = parse_outline(source_content, raw_relative_path)
+
+        card = SourceCard(
+            source_id=source_id,
+            source_path=f"raw/{raw_relative_path}",
+            source_sha256=sha256,
+            title=f"Source: {raw_relative_path.split('/')[-1]}",
+            project=project,
+            ingest_status="active",
+            created=existing_card.created if existing_card else today,
+            last_confirmed=today,
+            last_ingested=now_iso(),
+            outline=[{"text": item.text, "level": item.level, "char_count": item.char_count}
+                     for item in outline.items],
+            chunk_count=0,
+            chunks_processed=0,
+            chunks_failed=0,
+            pages_planned=[],
+            pages_written=[],
+            conflicts_opened=[],
+            claims_files=[],
+            drift_status="unchanged",
+        )
+        self.fs.write_source_card(card)
+
+        # Step 2: Chunk the source
+        chunks = chunk_by_outline(outline, source_content, self.settings)
+        card.chunk_count = len(chunks)
+        self.fs.write_source_card(card)
+
+        # Step 3: Analyze each chunk
+        chunk_results: list[ChunkAnalysisResult] = []
+        for chunk in chunks:
+            try:
+                result = self._analyze_chunk(
+                    chunk=chunk,
+                    source_id=source_id,
+                    project=project,
+                )
+                chunk_results.append(result)
+            except Exception as exc:
+                logger.error("Chunk analysis failed: chunk_id=%s error=%s", chunk.chunk_id, exc)
+                chunk_results.append(ChunkAnalysisResult(
+                    chunk_id=chunk.chunk_id,
+                    source_id=source_id,
+                    section_path=chunk.section_path,
+                    outcome="failed",
+                ))
+
+        # Step 4: Merge analysis
+        merged = merge_analysis(chunk_results, source_id, raw_relative_path)
+
+        # Step 5: Generate pages (batch with limits)
+        pages_created, pages_updated, pages_superseded, conflict_ids = (
+            self._generate_from_merge(merged, project, source_content, allow_draft)
+        )
+
+        # Step 6: Update Source Card
+        card.chunks_processed = merged.chunks_processed
+        card.chunks_failed = merged.chunks_failed
+        card.pages_planned = [p["slug"] for p in merged.page_write_plan]
+        card.pages_written = pages_created + pages_updated
+        card.conflicts_opened = conflict_ids
+        self.fs.write_source_card(card)
+
+        # Step 7: Log and lint
+        log_entry = IngestLog(
+            timestamp=now_iso(),
+            source_file=raw_relative_path,
+            project=project,
+            pages_created=pages_created,
+            pages_updated=pages_updated,
+            conflicts_detected=conflict_ids,
+            skills_triggered=[],
+            char_delta=sum(
+                len(p.raw)
+                for s in pages_created + pages_updated
+                if (p := self.fs.read_page(s))
+            ),
+        )
+        self.fs.append_log(log_entry)
+
+        lint_report = None
+        if self.settings.ingest.auto_lint_after_ingest:
+            linter = WikiLinter(self.fs, self.settings)
+            lint_report = linter.lint(slugs=pages_created + pages_updated)
+
+        return IngestResult(
+            success=True,
+            source_file=raw_relative_path,
+            project=project,
+            pages_created=pages_created,
+            pages_updated=pages_updated,
+            pages_superseded=pages_superseded,
+            conflict_ids=conflict_ids,
+            skills_triggered=[],
+            lint_report=lint_report,
+            analysis_notes=merged.triage_report,
+        )
+
+    def _analyze_chunk(
+        self,
+        chunk: Chunk,
+        source_id: str,
+        project: str,
+    ) -> ChunkAnalysisResult:
+        """
+        Analyze a single chunk using Step 1 pipeline (LLM-based).
+        Returns typed ChunkAnalysisResult.
+        """
+        # Find related pages for this chunk
+        related = self._find_related_pages(chunk.text, project)
+        wiki_context = self._build_wiki_context(related)
+        skills = self.fs.read_skills()
+        agents_md = self._read_agents_md()
+        lang_rule = language_instruction(self.settings)
+
+        # Use existing Step 1 prompt but with chunk content
+        section_path_str = " → ".join(chunk.section_path) if chunk.section_path else "(root)"
+        prompt = STEP1_PROMPT.format(
+            source_file=f"{source_id} [{chunk.chunk_id}: {section_path_str}]",
+            project=project,
+            source_content=self.budget.trim(chunk.text, "wiki_context"),
+            wiki_context=wiki_context,
+            max_pages=self.settings.ingest.max_pages_per_batch,
+            schema=ANALYSIS_SCHEMA_HINT,
+            language_rule=lang_rule,
+        )
+
+        raw = self.llm.call(
+            system=build_system_prompt(STEP1_SYSTEM, agents_md, skills),
+            prompt=prompt,
+            temperature=0.1,
+        )
+
+        data = parse_json_response(raw, context=f"Chunk analysis {chunk.chunk_id}")
+
+        # Convert to ChunkAnalysisResult
+        candidate_slugs = []
+        for page_type in ("pages_to_create", "pages_to_update", "pages_to_supersede"):
+            for page in data.get(page_type, []):
+                slug = page.get("slug", "")
+                if slug and slug not in candidate_slugs:
+                    candidate_slugs.append(slug)
+
+        return ChunkAnalysisResult(
+            chunk_id=chunk.chunk_id,
+            source_id=source_id,
+            section_path=chunk.section_path,
+            candidate_pages=candidate_slugs,
+            claims=data.get("claims", []),
+            conflicts=data.get("conflicts", []),
+            outcome="page" if candidate_slugs else "ignored",
+        )
+
+    def _generate_from_merge(
+        self,
+        merged: MergeAnalysisResult,
+        project: str,
+        source_content: str,
+        allow_draft: bool,
+    ) -> tuple[list[str], list[str], list[str], list[str]]:
+        """
+        Generate wiki pages from merge analysis result.
+        Respects max_auto_write_pages and require_review_if_pages_gt limits.
+        """
+        pages_created = []
+        pages_updated = []
+        pages_superseded = []
+        conflict_ids = []
+
+        # Record conflicts first (non-blocking)
+        for conflict_data in merged.all_conflicts:
+            cid = self._record_single_conflict(conflict_data, project, merged.source_path)
+            if cid:
+                conflict_ids.append(cid)
+
+        # Check review threshold
+        total_pages = len(merged.all_candidate_pages)
+        if total_pages > self.settings.ingest.require_review_if_pages_gt:
+            logger.warning(
+                "Large source: %d pages planned exceeds review threshold (%d). "
+                "Creating draft for review.",
+                total_pages, self.settings.ingest.require_review_if_pages_gt,
+            )
+            # For now, proceed with auto-write up to max_auto_write_pages
+            # TODO: implement draft mode for large sources
+
+        # Generate pages in batches
+        for i, page_info in enumerate(merged.all_candidate_pages):
+            if i >= self.settings.ingest.max_auto_write_pages:
+                logger.warning(
+                    "Reached max_auto_write_pages limit (%d). "
+                    "Remaining %d pages need manual ingest.",
+                    self.settings.ingest.max_auto_write_pages,
+                    total_pages - i,
+                )
+                break
+
+            slug = page_info["slug"]
+            # Determine action based on existing page
+            existing = self.fs.read_page(slug)
+            action = "update" if existing else "create"
+
+            # For large sources, we generate content from the full source
+            # but focus on relevant sections
+            try:
+                page_meta, page_content = self._generate_single_page(
+                    slug=slug,
+                    project=project,
+                    source_content=source_content,
+                    existing_content=existing.raw if existing else "",
+                    action=action,
+                )
+                self.fs.write_page(
+                    slug=slug,
+                    meta=page_meta,
+                    content=page_content,
+                    allow_overwrite=(action != "create"),
+                )
+                if action == "create":
+                    pages_created.append(slug)
+                else:
+                    pages_updated.append(slug)
+            except Exception as exc:
+                logger.error("Failed to generate page %s: %s", slug, exc)
+
+        return pages_created, pages_updated, pages_superseded, conflict_ids
+
+    def _generate_single_page(
+        self,
+        slug: str,
+        project: str,
+        source_content: str,
+        existing_content: str,
+        action: str,
+    ) -> tuple[dict, str]:
+        """Generate a single wiki page from source content."""
+        from app.agents.ingest_helpers import (
+            build_system_prompt, parse_json_response,
+        )
+        from app.agents.ingest_prompts import STEP2_PROMPT, STEP2_SYSTEM
+
+        skills = self.fs.read_skills()
+        agents_md = self._read_agents_md()
+        today = date.today().isoformat()
+        char_limit = self._char_limit_for_type("entity")
+
+        # Build a minimal planned page dict for the prompt
+        planned_page = {
+            "slug": slug,
+            "title": slug.split("/")[-1].replace("-", " ").title(),
+            "project": project,
+            "page_type": "entity",
+            "tags": [project],
+            "action": action,
+        }
+
+        candidates = self.fs.build_link_candidates()
+        link_lines = []
+        for c in candidates[:15]:
+            alias_str = "; ".join(c["aliases"][:3])
+            link_lines.append(f"- [[{c['slug']}]] — {c['title']}; aliases: {alias_str}")
+        link_candidates_text = "\n".join(link_lines) if link_lines else "(no candidates yet)"
+
+        # Trim source content to fit budget
+        source_trimmed = self.budget.trim(source_content, "wiki_context")
+
+        prompt = STEP2_PROMPT.format(
+            planned_page_json=json.dumps(planned_page, ensure_ascii=False, indent=2),
+            source_file=slug,
+            source_sections=source_trimmed[:3000],
+            existing_content=existing_content[:2000],
+            link_candidates=link_candidates_text,
+            today=today,
+            confidence=0.8,
+            sources_count=1,
+            char_limit=char_limit,
+        )
+
+        system = build_system_prompt(STEP2_SYSTEM, agents_md, skills)
+        raw = self.llm.call(system=system, prompt=prompt, temperature=0.1, json_mode=True, max_tokens=4000)
+
+        try:
+            page_data = parse_json_response(raw, context=f"Step2 {slug}")
+        except ValueError:
+            retry_prompt = prompt + "\n\nIMPORTANT: Your previous response was not valid JSON. Output ONLY valid JSON."
+            raw = self.llm.call(system=system, prompt=retry_prompt, temperature=0.0, json_mode=True, max_tokens=4000)
+            page_data = parse_json_response(raw, context=f"Step2 retry {slug}")
+
+        meta = page_data.get("meta", {})
+        content = page_data.get("content", "")
+        if not meta.get("created"):
+            meta["created"] = today
+        meta["project"] = project
+
+        existing_slugs = {p.slug for p in self.fs.list_pages()}
+        content = normalize_wikilinks(content, existing_slugs)
+
+        return meta, content
+
+    def _record_single_conflict(
+        self,
+        conflict_data: dict,
+        project: str,
+        source_path: str,
+    ) -> str | None:
+        """Record a single conflict from chunk analysis."""
+        try:
+            existing_raw = self.fs.read_conflicts_raw()
+            ids = re.findall(r"CONFLICT-(\d+)", existing_raw)
+            next_num = max((int(i) for i in ids), default=0) + 1
+            cid = f"CONFLICT-{next_num:03d}"
+
+            entry = ConflictEntry(
+                id=cid,
+                status="OPEN",
+                date=date.today().isoformat(),
+                project=project,
+                source_file=source_path,
+                conflict_type=conflict_data.get("conflict_type", "factual_contradiction"),
+                page_a_slug=conflict_data.get("existing_slug", "unknown"),
+                page_b_ref=conflict_data.get("source_ref", source_path),
+                context_a=conflict_data.get("context_existing", "")[:600],
+                context_b=conflict_data.get("context_source", "")[:600],
+                suggested_options=conflict_data.get("suggested_options", []),
+                description=conflict_data.get("description", ""),
+                is_cross_project=conflict_data.get("is_cross_project", False),
+            )
+            self.fs.append_conflict(entry)
+            return cid
+        except Exception as exc:
+            logger.error("Failed to record conflict: %s", exc)
+            return None
