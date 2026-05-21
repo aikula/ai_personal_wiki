@@ -1,131 +1,132 @@
-# Large-Scale Wiki Engine Proposal
-
+# Large-Scale Wiki Engine Specification
 Дата: 2026-05-19
 
-## Контекст
+Статус: рабочая спецификация для реализации агентом.
 
-Текущая реализация хорошо подходит для небольших источников и умеренного числа
-wiki-страниц, но начинает терять полноту при росте объема:
+## 1. Цель
 
-- ingest обрезает входной документ до текущего `wiki_context` лимита;
-- поиск ответов читает только несколько top-страниц;
-- ReAct-режим видит только preview страницы, а не структуру документа;
-- жесткий `max_pages_per_source=10` защищает от взрыва страниц, но ломает
-  большие источники;
-- простой keyword search плохо различает похожие страницы.
+Сохранить plain-text/filesystem-first архитектуру Wiki Engine и убрать
+ограничение "wiki помещается в один context window".
 
-Цель: сохранить plain-text/filesystem-first архитектуру, но научить систему
-переваривать большие документы, отвечать по 200+ страницам и не терять
-provenance.
+Система должна:
 
-## Главный принцип
+- ingest-ить источники до 1 млн символов без silent truncation;
+- отвечать по wiki на 200+ страниц, читая нужные секции, а не первые preview;
+- сохранять provenance до raw-файла, секции и extracted claim;
+- обнаруживать drift источников через sha256;
+- поддерживать универсальную wiki: ПО, инструкции, техника, правила, положения.
 
-Не обрезать знания под context window.
+Не цели текущего этапа:
 
-Context window должен ограничивать размер одной операции LLM, а не размер
-источника, wiki или ответа. Большие документы нужно компилировать по частям:
+- не добавлять базу данных;
+- не добавлять vector embeddings в обязательный path;
+- не делать автоматическое разрешение semantic conflicts;
+- не crystallize ответы обратно в wiki, но историю вопросов/ответов хранить.
+
+## 2. Принципы
+
+### 2.1 Context window не является границей знания
+
+Context window ограничивает только одну LLM-операцию. Он не должен ограничивать
+размер raw source, wiki или ответа.
+
+Нормальный ingest больших документов:
 
 ```text
-raw source -> outline -> chunks -> claims/plans -> merged analysis -> wiki pages
+raw source -> source identity -> outline -> chunks -> chunk analysis
+  -> claims -> merged analysis -> triage report -> page generation/update
 ```
 
-## Что полезно из обсуждения LLM Wiki
+### 2.2 Filesystem остается database
 
-Из статьи Karpathy и комментариев к ней полезны следующие идеи:
+Все состояние хранится в Markdown внутри `wiki-data/`. Запись в `wiki-data/`
+идет только через `app/core/wiki_fs.py`.
 
-- `index.md` должен быть активной navigation map, а не только UI-каталог.
-- Хороший query сначала читает index/outline, затем проваливается в страницы.
-- Ingest должен быть triage-first: сначала план, diff, conflicts, потом write.
-- Raw sources остаются immutable source of truth.
-- Хорошие ответы надо уметь crystallize обратно в wiki.
-- Wiki нужно периодически lint/self-heal: contradictions, stale claims, orphan
-  pages, missing links, duplicate topics.
-- Source drift должен быть видимым через sha256/provenance.
-- Для роста wiki нужны typed relationships, иначе все связи превращаются в
-  слабое `related`.
+Новые namespace:
 
-Проекты из обсуждения, которые можно использовать как ориентиры:
+```text
+wiki/_sources/<project>/<source-slug>.md
+wiki/_claims/<project>/<source-slug>.md
+wiki/_claims/<project>/<source-slug>/chunk-001.md
+```
 
-- `qmd`: CLI/MCP search over markdown with query/get/multi_get primitives.
-- `Origin`: granular memories, traceability, dedupe, contradiction detection.
-- `OmegaWiki`: wiki как центр полного workflow, skills as rigid workflows.
-- `knowledge_management` plugin: triage-first ingest, sha256 drift detection,
-  deterministic scripts for mechanical work.
+Для больших источников claims сразу дробятся по chunk-файлам, чтобы не нарушать
+лимиты размера.
 
-## Ingest документов на 1 млн символов
+### 2.3 Все операции typed и проверяемые
 
-### Почему нельзя обрезать
+LLM output никогда не пишется напрямую:
 
-Обрезание до 21k chars означает, что система вообще не узнает о фактах,
-разделах и конфликтах после лимита. Это допустимо только как emergency fallback,
-но не как штатный ingest.
+```text
+LLM string -> parse -> Pydantic/dataclass -> validate -> wiki_fs write
+```
 
-### Предлагаемый pipeline
+Malformed JSON: один retry с явным format reminder. Повторный сбой:
+`WikiEngineError` с контекстом для API layer.
 
-1. `parse_outline(source)`
-   - Для Markdown: заголовки `#`, `##`, `###`.
-   - Для PDF/DOCX/PPTX после conversion: искать заголовки, нумерацию,
-     оглавление, page markers.
-   - Если структуры нет: строить synthetic outline по крупным абзацам.
+## 3. Runtime Budgets
 
-2. `chunk_by_outline(outline)`
-   - Резать по естественным границам: heading, subsection, paragraph.
-   - Target chunk: примерно `12_000-18_000` chars.
-   - Hard max chunk: примерно `25_000` chars.
-   - Таблицы, code blocks и списки стараться держать атомарно.
-   - Для слишком больших секций применять recursive split.
+При старте система пытается получить context window модели через `/v1/models`.
 
-3. `analyze_chunk(chunk)`
-   - Извлечь candidate pages.
-   - Извлечь factual claims.
-   - Найти локальные conflicts с уже известной wiki.
-   - Вернуть structured JSON, не писать wiki.
+Требования:
 
-4. `merge_analysis(chunk_results)`
-   - Объединить одинаковые slugs.
-   - Слить source sections.
-   - Убрать дубли claims.
-   - Поднять conflicts на уровень source.
-   - Сформировать общий triage report.
+- если endpoint возвращает model context limit, использовать его;
+- если поле отсутствует/нестандартное, использовать `settings.yaml`;
+- применять safety multiplier, по умолчанию `0.70`;
+- output budget резервируется отдельно и не съедается input budget;
+- все budget decisions логируются в debug/status output.
 
-5. `generate_pages(merged_analysis)`
-   - Генерировать страницы батчами.
-   - При больших изменениях создавать draft/triage для review.
-   - Писать через `wiki_fs.py`.
+Конфигурация:
 
-### Что делать с `max_pages_per_source=10`
+```yaml
+llm:
+  context_window_chars_fallback: 48000
+  context_window_safety_ratio: 0.70
+  output_budget_chars: 6000
+```
 
-Жесткий лимит на весь источник нужно убрать.
+Acceptance:
 
-Вместо него:
+- неизвестный `/v1/models` не ломает запуск, используется fallback;
+- ни один LLM-call не получает prompt больше safe budget;
+- превышение budget приводит к chunking/section selection, а не truncation.
 
-- `max_pages_per_batch`: сколько страниц генерировать за один проход;
-- `max_auto_write_pages`: сколько можно записать без review;
-- `require_review_if_pages_gt`: порог для обязательного draft;
-- `large_source_mode`: режим для источников выше заданного char threshold.
+### 3.1 Optional VPS Auth
 
-Большой источник может легитимно породить 40-100 страниц. Это не ошибка, если
-страницы имеют provenance и прошли triage.
+Для запуска на VPS добавляется опциональная защита одним логином и паролем из
+`.env`. Это deployment guard, не user management.
 
-## Source Cards
+Конфигурация:
 
-Добавить служебные страницы источников:
+```text
+WIKI_AUTH_ENABLED=true
+WIKI_AUTH_USERNAME=admin
+WIKI_AUTH_PASSWORD=<password>
+```
+
+Архитектура: FastAPI middleware/dependency над UI и `/api/*`; HTTP Basic Auth,
+не cookies/sessions; `secrets.compare_digest`; fail fast при enabled auth и
+пустых credentials; не логировать пароль и не отдавать его через settings API;
+`/health` можно оставить публичным только если он не раскрывает данные.
+
+Ограничения: Basic Auth только за HTTPS/reverse proxy. Пароль в `.env` допустим
+для MVP, но `.env` не должен попадать в git.
+
+Acceptance: disabled auth не меняет поведение; enabled без credentials не
+стартует; UI/API без valid credentials дают `401`; valid credentials открывают
+UI/API; tests покрывают enabled/disabled/missing creds.
+
+## 4. Large Source Ingest
+
+### 4.1 Source identity
+
+Перед анализом source создается/обновляется Source Card:
 
 ```text
 wiki/_sources/<project>/<source-slug>.md
 ```
 
-Назначение:
-
-- хранить outline источника;
-- хранить sha256 raw-файла;
-- фиксировать ingest status;
-- перечислять созданные/обновленные wiki pages;
-- перечислять extracted claims;
-- фиксировать unresolved conflicts;
-- показывать source drift, если raw изменился.
-
-Пример frontmatter:
+Frontmatter:
 
 ```yaml
 ---
@@ -139,23 +140,83 @@ last_confirmed: 2026-05-19
 supersedes: null
 superseded_by: null
 created: 2026-05-19
+source_id: myapp/deploy_guide
 source_path: raw/myapp/deploy_guide.md
-source_sha256: ...
+source_sha256: "<sha256>"
 ingest_status: active
 ---
 ```
 
-## Claims Layer
+Source Card содержит outline, ingest status, chunk counters, planned/written
+pages, opened conflicts, links to claims files и drift status.
 
-Для больших документов полезен промежуточный слой claims.
+### 4.2 Outline parser и chunking
 
-Wiki page - это distillation. Claim - это маленькая проверяемая единица знания.
+`parse_outline(source)` строит структуру документа.
 
-Минимальная claim-модель:
+Fallback order:
+
+1. Markdown headings: `#`, `##`, `###`, ...
+2. Converted document markers: page markers, TOC, numbered headings.
+3. Large paragraph groups.
+4. Sentence groups.
+5. Hard split только как emergency fallback.
+
+Hard split должен не резать code fence, Markdown table или sentence посередине,
+если можно отступить к ближайшей естественной границе. Chunk, созданный hard
+split, помечается `split_reason: hard_max`.
+
+Конфигурация:
 
 ```yaml
-claim_id: raw/myapp/deploy_guide.md#claim-001
+ingest:
+  large_source_threshold_chars: 100000
+  chunk_min_chars: 8000
+  chunk_target_chars: 16000
+  chunk_max_chars: 25000
+```
+
+Env overrides:
+
+```text
+WIKI_CHUNK_MIN_CHARS
+WIKI_CHUNK_TARGET_CHARS
+WIKI_CHUNK_MAX_CHARS
+WIKI_LARGE_SOURCE_THRESHOLD_CHARS
+```
+
+### 4.3 Chunk analysis
+
+Каждый chunk анализируется отдельно и возвращает typed result:
+
+```yaml
+chunk_id: "chunk-001"
+source_id: "myapp/deploy_guide"
+section_path: ["Deployment", "Redis"]
+candidate_pages: []
+claims: []
+conflicts: []
+ignored_sections: []
+```
+
+Правила:
+
+- chunk analysis не пишет wiki pages;
+- conflicts пишутся в `conflicts.md`, но не блокируют non-conflicting ingest;
+- каждый source section получает outcome: page, claim, conflict, ignored или
+  failed.
+
+### 4.4 Claims layer
+
+Claims выносятся сразу, не встраиваются в Source Card.
+
+Минимальная модель:
+
+```yaml
+claim_id: myapp/deploy_guide#chunk-001-claim-001
+source_id: myapp/deploy_guide
 source_path: raw/myapp/deploy_guide.md
+source_sha256: "<sha256>"
 source_section: "## Redis"
 quote: "Redis 7.2 is used for session cache"
 normalized: "Redis 7.2 используется для session cache."
@@ -164,260 +225,276 @@ confidence: 0.92
 status: active
 ```
 
-Где хранить:
-
-- начально можно хранить claims внутри Source Card;
-- позже можно вынести в `wiki/_claims/`, если объем станет большим.
-
-Зачем:
-
-- легче dedupe;
-- легче conflict detection;
-- легче source drift;
-- проще объяснить, откуда взялась строка в wiki page.
-
-## Query по 200+ страницам
-
-### Текущая проблема
-
-Сейчас factual/comparison retrieval берет только несколько страниц. ReAct читает
-первые 1500 символов страницы. Если ответ лежит в середине или конце страницы,
-агент его не увидит.
-
-### Новый query flow
+Statuses:
 
 ```text
-question
-  -> classify
-  -> read project index / global index
-  -> search candidates
-  -> read outlines
-  -> select sections
-  -> read sections
-  -> answer with citations
+active | superseded | contradicted | unresolved | ignored
 ```
 
-### Новые tools/methods
+Claims нужны для dedupe, conflict detection, source drift analysis, точной
+provenance и объяснения, почему факт попал в page.
 
-1. `read_page_outline(slug)`
-   - title;
-   - synopsis;
-   - tags;
-   - headings;
-   - short section previews.
+### 4.5 Merge analysis и page generation
 
-2. `read_page_section(slug, heading)`
-   - полный текст секции;
-   - optional char limit;
-   - anchors for citation.
+`merge_analysis(chunk_results)` объединяет одинаковые slugs, dedupe-ит claims,
+поднимает conflicts на source level, строит triage report и page write plan.
 
-3. `multi_read_sections(requests)`
-   - batch read selected sections.
+Жесткий `max_pages_per_source=10` удаляется.
 
-4. `expand_query(question)`
-   - 3-5 query variants;
-   - synonyms;
-   - expected entity names;
-   - possible section titles.
+Новая конфигурация:
 
-5. `search_pages(query, top_k=20)`
-   - пока keyword search;
-   - позже BM25/TF-IDF;
-   - потом optional vector/rerank.
+```yaml
+ingest:
+  max_pages_per_batch: 10
+  max_auto_write_pages: 15
+  require_review_if_pages_gt: 25
+```
 
-### Почему outline лучше preview
+Большой источник может создать 40-100 страниц. Это не ошибка, если все страницы
+имеют provenance и прошли triage.
 
-Preview первых 1500 символов отвечает на вопрос "что в начале страницы".
-Outline отвечает на вопрос "есть ли на странице нужный раздел".
+Базовый safe path: генерировать валидную новую версию страницы целиком и
+сравнивать diff до записи.
 
-Для длинной страницы outline почти всегда полезнее preview.
+Точечные правки разрешены только как structured operations:
 
-## Retrieval без BM25 на первом этапе
+```text
+replace_section
+append_section
+update_frontmatter_field
+add_provenance_marker
+```
 
-BM25/TF-IDF можно добавить позже. До этого улучшить качество можно так:
+Запрещено:
 
-- искать по нескольким query variants;
-- учитывать title/tags/synopsis/headings сильнее, чем body;
-- читать index перед search;
-- возвращать больше кандидатов;
-- использовать section drilldown;
-- давать агенту tool для чтения outline;
-- выбирать секции перед чтением full text.
+- произвольный LLM patch без typed operation;
+- rewrite страницы с потерей frontmatter;
+- удаление старых claims без статуса `superseded` или `ignored`;
+- semantic conflict resolution без записи в `conflicts.md`.
 
-Пример scoring без новых зависимостей:
+Acceptance:
+
+- 1M char source полностью обработан без silent truncation;
+- Source Card показывает все chunks и их status;
+- каждый chunk имеет processed/failed outcome;
+- every generated page имеет frontmatter, Wikilinks и provenance;
+- claims записаны в `_claims`;
+- conflicts не блокируют non-conflicting pages;
+- index обновлен после create/delete;
+- file size limits не нарушены.
+
+## 5. Query по 200+ страницам
+
+### 5.1 Query flow
+
+```text
+question -> classify intent/project -> read L0/L1 index
+  -> expand query if needed -> search candidates -> read page outlines
+  -> select sections -> multi_read_sections -> answer with citations
+```
+
+QueryAgent больше не должен полагаться на первые 1500 символов page preview.
+
+### 5.2 Required tools
+
+`read_page_outline(slug)` возвращает title, summary/synopsis, tags, headings,
+short section previews и source/claim references if available.
+
+`read_page_section(slug, heading, char_limit=None)` возвращает полный текст
+секции, anchor, provenance markers и section source refs.
+
+`multi_read_sections(requests)` batch-читает выбранные секции.
+
+`search_pages(query, top_k=20)` использует weighted field search.
+
+`expand_query(question)` сначала делает deterministic expansion. LLM expansion
+разрешен только если deterministic retrieval слабый или вопрос сложный.
+
+### 5.3 Weighted search без BM25
+
+На первом этапе без новых зависимостей:
 
 ```text
 score =
   8 * matches_in_title +
   5 * matches_in_tags +
-  4 * matches_in_synopsis +
+  4 * matches_in_summary +
   3 * matches_in_headings +
   1 * matches_in_body
 ```
 
-Это не BM25, но лучше текущего `text.count(w)` по всему raw.
+Позже BM25/TF-IDF можно добавить без изменения QueryAgent tool flow.
 
-## Typed Relationships
+Acceptance:
 
-Обычный wikilink говорит только "связано". Для большой wiki этого мало.
+- ответ находится в середине/конце длинной страницы;
+- wiki на 200+ страниц возвращает релевантные candidates;
+- ответ цитирует wiki pages как `[[slug]]`;
+- если проекты различаются, ответ показывает side-by-side, не выбирая winner;
+- если context не хватает, агент читает дополнительные sections, а не truncates.
 
-Минимальный вариант:
+## 6. Index Architecture
+
+`index.md` - active navigation map, не только UI-каталог.
+
+Иерархия:
+
+- L0 `wiki/index.md`: проекты, top-level domains, ссылки на L1;
+- L1 `wiki/<project>/index.md`: compact catalog проекта;
+- L2 category indexes: создаются при превышении лимита L1.
+
+L0 не должен пытаться подробно перечислять все 200+ pages.
+
+L1 entry формат:
+
+```markdown
+[[myapp/storage/redis]] - Session cache, Redis 7.2, TTL policy
+```
+
+Если index превышает лимит, split по смысловым категориям, не mechanical split.
+
+Acceptance:
+
+- create/delete page обновляет index;
+- L0 остается compact;
+- L1/L2 позволяют человеку и агенту пройти от проекта к нужной секции;
+- index pages не превышают лимиты.
+
+## 7. Typed Relationships
+
+Wikilinks остаются human navigation layer. Typed relationships - optional
+machine-readable graph во frontmatter.
+
+Relations не обязательны для всех страниц на первом этапе. Linter может
+предупреждать только для page types, где отношения очевидны.
+
+Пример:
 
 ```yaml
 relations:
-  - type: uses
-    target: myapp/storage/redis
-  - type: supersedes
-    target: myapp/deploy/old-guide
-  - type: configured_by
-    target: myapp/config/env
+  - type: part_of
+    target: myapp/equipment/pump
+  - type: requires
+    target: myapp/procedures/safety-check
+  - type: governed_by
+    target: myapp/rules/regulation-12
 ```
 
-В тексте остаются обычные `[[slug]]`, но frontmatter дает machine-readable graph.
+Allowed relation types:
 
-Полезные типы:
-
-- `uses`
-- `depends_on`
-- `configured_by`
-- `supersedes`
-- `contradicts`
-- `implements`
-- `mentions`
-- `source_for`
-
-## Index Improvements
-
-`index.md` должен содержать не только project list, но и compact catalog:
-
-- project;
-- page slug;
-- title;
-- one-line synopsis;
-- tags;
-- updated date;
-- source count.
-
-Для больших проектов L1 index должен быть более полезным:
-
-```markdown
-## Storage
-[[myapp/storage/redis]] - Session cache, Redis 7.2, TTL policy
-[[myapp/storage/postgres]] - Primary relational database
-
-## Deployment
-[[myapp/deploy/docker]] - Docker Compose deployment
-[[myapp/deploy/env]] - Required environment variables
+```text
+part_of | contains | depends_on | related_to | contradicts | supersedes
+source_for | governed_by | requires | prohibits | allows | applies_to
+procedure_for | mentions
 ```
 
-Если L1 index превышает лимит, его нужно split по категориям, а не просто писать
-warning.
+Правила:
 
-## Lint / Self-Healing
+- missing relation target: linter warning;
+- unknown relation type: linter error;
+- `related_to` допустим, но не должен заменять более точный тип, когда он ясен;
+- semantic relations не используются для auto-resolution conflicts.
 
-Audit должен стать рабочим циклом:
+## 8. Audit / Self-Healing
 
-1. Detect:
-   - broken links;
-   - missing source files;
-   - source sha drift;
-   - duplicate titles;
-   - duplicate claims;
-   - orphan pages;
-   - pages without incoming/outgoing links;
-   - stale facts;
-   - unresolved conflicts.
+Audit становится циклом Detect -> Plan -> Apply.
 
-2. Plan:
-   - deterministic fixes;
-   - candidate merges;
-   - conflict queue;
-   - suggested source re-ingest.
+Detect: broken links, missing source files, source sha drift, duplicate
+titles/claims, orphan pages, pages without incoming/outgoing links, stale facts,
+unresolved conflicts, invalid relation targets/types, claims without Source
+Card, source sections without outcome.
 
-3. Apply:
-   - safe deterministic fixes automatically;
-   - semantic changes через draft/human review.
+Safe auto fixes: index counts, missing index entry for existing page, stale
+generated timestamp, broken link caused by known slug rename, Source Card status
+refresh after sha check.
 
-## Implementation Plan
+Review required: duplicate page merge, contradiction resolution, deleting a
+page, semantic rewrite, marking claim contradicted/superseded unless derived
+from approved conflict.
 
-### Phase 1: Query Reliability
+Acceptance: audit report separates safe auto fixes from review-required changes;
+no semantic fix is applied silently; source drift is visible without reading raw
+files manually.
 
-- Add `read_page_outline`.
-- Add `read_page_section`.
-- QueryAgent uses index-first search.
-- Increase candidate search to top-20.
-- Add query expansion.
-- Stop relying on first 1500 chars preview.
+## 9. Implementation Plan
 
-Success criteria:
+### Phase 1A: Query Reliability
+Work: add `read_page_outline`, `read_page_section`, `multi_read_sections`; make
+QueryAgent index-first; raise candidate search to top-20; add deterministic
+query expansion; remove dependency on first-page preview. Acceptance: answer
+after 5000+ chars is found; 200 synthetic pages retrieve the expected page;
+answers cite `[[slug]]`; no query path truncates instead of selecting sections.
+Checklist: outline/section extraction tests; long-page and 200-page integration
+tests; backward-compatible API.
 
-- Questions can be answered from sections in middle/end of long pages.
-- 200+ page wiki still returns relevant candidates for single-project queries.
+### Phase 1B: Source Identity and Drift Primitives
+Work: compute source sha256; create Source Card skeleton; add source drift
+linter check; link pages to source cards where available. Acceptance: changed
+raw file is detected; unchanged raw file is not reported; Source Card is valid;
+missing source warning does not crash audit. Checklist: sha256 tests; Source
+Card path tests; linter tests for drift and missing raw source.
 
 ### Phase 2: Large Source Ingest
+Work: implement outline parser and chunking fallback order; run Step 1 per
+chunk; merge chunk analysis; replace `max_pages_per_source=10` with
+batch/review limits. Acceptance: 1M char fixture processes all chunks; failed
+chunk is reported; no section is silently dropped; conflicts do not abort
+non-conflicting writes; generated pages stay under char limits. Checklist:
+Markdown/synthetic outline tests; code/table-safe chunking tests; mock-LLM
+multi-chunk integration test; review threshold test.
 
-- Add source outline parser.
-- Add chunking by headings/paragraphs.
-- Run Step1 per chunk.
-- Merge chunk analysis.
-- Replace `max_pages_per_source=10` with batch/review limits.
+### Phase 3: Claims Layer
+Work: extract claims during chunk analysis; write claims into `_claims`; dedupe
+claims; use claims for conflict detection and page generation provenance.
+Acceptance: factual page sections reference source/claim; duplicate claim is not
+written twice; contradicted claim opens conflict; claim files stay under limits.
+Checklist: claim model; claim id/status tests; claim-driven conflict test.
 
-Success criteria:
-
-- 1M char source is fully processed without truncation.
-- Ingest reports all chunks processed.
-- No information is silently dropped because of context limit.
-
-### Phase 3: Source Cards and Drift
-
-- Create `wiki/_sources/...` pages.
-- Store source sha256 and outline.
-- Link generated pages to source cards.
-- Linter warns if raw source changed after ingest.
-
-Success criteria:
-
-- Every generated fact can be traced to a raw source.
-- Changed source files are detectable.
-
-### Phase 4: Claims Layer
-
-- Extract claims during chunk analysis.
-- Store claims in source cards.
-- Use claims for conflict detection and page generation.
-
-Success criteria:
-
-- Conflict detection operates on claims, not only page prose.
-- Page updates can cite exact source section/claim.
+### Phase 4: Safe Page Updates
+Work: implement page write plans; support section-level typed operations; show
+deterministic diffs before large writes; require review over thresholds.
+Acceptance: update preserves frontmatter and unrelated sections; invalid
+operation is rejected; large update enters review; arbitrary LLM patch is
+rejected. Checklist: tests for `replace_section`, `append_section`,
+`update_frontmatter_field`, and arbitrary patch rejection.
 
 ### Phase 5: Better Retrieval
+Work: replace naive search with weighted field search; keep QueryAgent tool
+contract stable; optionally add BM25/TF-IDF later. Acceptance:
+title/tags/headings outrank body-only matches; query API remains compatible;
+BM25 can be added without changing QueryAgent prompts/tools. Checklist: field
+scoring tests; current search regression tests; similar-pages benchmark fixture.
 
-- Replace naive search with weighted field search.
-- Later add BM25/TF-IDF.
-- Optional: qmd-like CLI/MCP integration.
+## 10. Global Done Checklist
 
-Success criteria:
+- [ ] No database or JSON state store added; all writes to `wiki-data/` go
+      through `wiki_fs.py`.
+- [ ] All new pages have required frontmatter; all internal links use
+      `[[slug]]`; L0/L1 indexes update after page create/delete.
+- [ ] No file size limit is exceeded silently; ingest remains two-step; conflicts
+      are written before any resolution.
+- [ ] Query and ingest read `skills.md` before operation; agent tests use mock
+      LLM returning valid JSON.
+- [ ] Tests cover new `wiki_fs.py` methods; API route tests use
+      `httpx AsyncClient` where route behavior changes.
 
-- Retrieval quality improves before adding embeddings.
-- BM25 can be introduced without changing QueryAgent tool flow.
+## 11. Open Decisions
 
-## Open Questions
+Resolved now:
 
-1. Should Source Cards be visible in the UI tree by default or hidden under a
-   technical section?
-2. Should claims be separate files or embedded in Source Cards initially?
-3. What threshold defines `large_source_mode`: 50k, 100k, 250k chars?
-4. What review threshold is acceptable: more than 10 pages, 25 pages, 50 pages?
-5. Should typed relations be required immediately or optional/linter-warned?
-6. Should crystallized answers become normal concept pages or a separate
-   `wiki/_queries/` namespace?
+- claims are separate from Source Cards from the start;
+- typed relations are optional and universal, not software-only;
+- source sha256/drift primitives are implemented before full large ingest;
+- exact page updates are structured section/frontmatter operations only;
+- indexes are hierarchical and split semantically.
 
-## Recommended Next Step
+Still open:
 
-Start with Phase 1.
+- whether Source Cards are visible in UI tree by default or hidden;
+- exact UI for review/draft plans;
+- whether query history lives only in chat history or also in `_queries`;
+- when to introduce BM25/TF-IDF.
 
-Reason: better query tools are useful immediately, low-risk, and also become the
-foundation for large-source ingest review. If the agent can read outlines and
-sections reliably, it can both answer better and inspect large ingest outputs
-better.
+Recommended first task: Phase 1A, because outline/section query tools are
+low-risk, immediately useful, and become the inspection foundation for large
+ingest, Source Cards, claims, and review flows.

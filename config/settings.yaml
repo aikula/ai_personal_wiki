@@ -24,9 +24,17 @@ limits:
 
 ingest:
   two_step: true
-  max_pages_per_source: 10
+  max_pages_per_source: 10        # kept for backward compat
   auto_lint_after_ingest: true
   conflict_continue_on_detect: true
+  # Large source ingest (Phase 2)
+  large_source_threshold_chars: 100000
+  chunk_min_chars: 8000
+  chunk_target_chars: 16000
+  chunk_max_chars: 25000
+  max_pages_per_batch: 10
+  max_auto_write_pages: 15
+  require_review_if_pages_gt: 25
 
 query:
   context_budget_chars: 21000

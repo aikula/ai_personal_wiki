@@ -22,7 +22,10 @@ wiki-engine/
 │   │   ├── linter.py             # WikiLinter: structural checks
 │   │   ├── interpreter.py        # Sandboxed Python code interpreter
 │   │   ├── llm_client.py         # OpenAI-compatible client wrapper
-│   │   └── token_budget.py       # Symbol/token counting utilities
+│   │   ├── token_budget.py       # Symbol/token counting utilities
+│   │   ├── large_source_ingest.py # Outline parser, chunking, merge analysis
+│   │   ├── safe_page_updates.py  # Typed page operations with diff generation
+│   │   └── search_provider.py    # Abstract search interface (weighted/BM25)
 │   ├── api/
 │   │   ├── main.py               # FastAPI app entrypoint
 │   │   ├── routes/
@@ -43,6 +46,8 @@ wiki-engine/
 │   │   ├── index.md              # L0 navigation index
 │   │   ├── log.md                # Rolling change log
 │   │   ├── _general/             # Entities/concepts from general raw
+│   │   ├── _sources/             # Source Cards (Phase 1B+)
+│   │   ├── _claims/              # Individual claims (Phase 3)
 │   │   └── <project_name>/       # Per-project wiki pages
 │   ├── conflicts.md              # Conflict queue (unresolved + resolved)
 │   ├── skills.md                 # Accumulated rules and patterns
@@ -85,7 +90,7 @@ Required fields — agent MUST include all of them:
 ***
 title: <human readable title>
 project: <project_name | _general>
-type: <entity | concept | index | log>
+type: <entity | concept | index | log | source>
 tags: [tag1, tag2]
 confidence: <0.0–1.0>
 sources: <int, number of source files that contributed>
@@ -94,6 +99,12 @@ supersedes: null
 superseded_by: null
 created: <YYYY-MM-DD>
 ***
+```
+
+### 3.1. New namespaces (Phase 1B+)
+```
+wiki/_sources/<project>/<source-slug>.md   — Source Cards with SHA256 + drift
+wiki/_claims/<project>/<source-slug>/      — Individual claims per chunk
 ```
 
 ### 4. WikiLinks are the navigation layer
