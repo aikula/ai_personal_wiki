@@ -18,6 +18,7 @@ import json
 import logging
 import re
 import shutil
+from typing import TYPE_CHECKING
 try:
     from markitdown import MarkItDown
     MARKITDOWN_AVAILABLE = True
@@ -26,6 +27,9 @@ except ImportError:
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
+
+if TYPE_CHECKING:
+    from app.core.safe_page_updates import PageUpdateDiff
 
 import frontmatter  # python-frontmatter
 
@@ -65,6 +69,14 @@ class CharLimitExceededError(WikiFSError):
 class SlugConflictError(WikiFSError):
     """Attempt to create page with already existing slug."""
 
+class ReviewRequiredError(WikiFSError):
+    """Update requires human review before applying."""
+    def __init__(self, slug: str, diff, reason: str):
+        self.slug = slug
+        self.diff = diff
+        self.reason = reason
+        super().__init__(f"Review required for {slug}: {reason}")
+
 
 # ─────────────────────────────────────────────
 # Data models
@@ -76,7 +88,7 @@ REQUIRED_FRONTMATTER = {
     "supersedes", "superseded_by", "created",
 }
 
-PAGE_TYPES = {"entity", "concept", "index", "log"}
+PAGE_TYPES = {"entity", "concept", "index", "log", "source"}
 PROJECT_TYPES = frozenset()
 
 
@@ -132,6 +144,60 @@ class WikiPage:
 
 
 @dataclass
+class SourceCard:
+    """Source identity card tracking ingest state and drift."""
+    source_id: str                # e.g. "myapp/deploy_guide"
+    source_path: str              # relative path from raw/, e.g. "raw/myapp/deploy_guide.md"
+    source_sha256: str
+    title: str                    # "Source: deploy_guide.md"
+    project: str
+    ingest_status: str            # "active" | "changed" | "removed" | "error"
+    created: str                  # ISO date
+    last_confirmed: str           # ISO date
+    last_ingested: str            # ISO datetime
+    outline: list[dict]           # [{text, level, char_count}, ...]
+    chunk_count: int
+    chunks_processed: int
+    chunks_failed: int
+    pages_planned: list[str]      # slugs planned for creation/update
+    pages_written: list[str]      # slugs actually written
+    conflicts_opened: list[str]   # conflict IDs opened during ingest
+    claims_files: list[str]       # paths to claim files: _claims/<project>/<source-slug>/chunk-XXX.md
+    drift_status: str             # "unknown" | "unchanged" | "changed" | "missing_source"
+
+    @property
+    def slug(self) -> str:
+        return f"_sources/{self.source_id}"
+
+
+@dataclass
+class PageOutline:
+    """Structured outline of a wiki page for query retrieval."""
+    slug: str
+    title: str
+    project: str
+    page_type: str
+    tags: list[str]
+    synopsis: str            # from frontmatter or first paragraph
+    headings: list[dict]     # [{text, anchor, level, char_count, preview}]
+    wikilinks: list[str]
+    char_count: int
+    confidence: float
+
+
+@dataclass
+class SectionContent:
+    """Content of a specific section within a wiki page."""
+    slug: str
+    heading: str
+    anchor: str
+    content: str
+    char_count: int
+    provenance_markers: list[str]   # ^[...] markers found in section
+    source_refs: list[str]          # raw source references if available
+
+
+@dataclass
 class ConflictEntry:
     id: str                    # e.g. "CONFLICT-007"
     status: str                # "OPEN" | "RESOLVED"
@@ -163,6 +229,35 @@ class IngestLog:
     conflicts_detected: list[str]  # conflict IDs
     skills_triggered: list[str]
     char_delta: int            # total chars added to wiki
+
+
+@dataclass
+class Claim:
+    """
+    A factual claim extracted from a source during chunk analysis.
+
+    Claims are stored as individual files in wiki/_claims/<project>/<source-slug>/
+    to enable deduplication, conflict detection, and provenance tracking.
+    """
+    claim_id: str               # e.g. "myapp/deploy_guide#chunk-001-claim-001"
+    source_id: str              # e.g. "myapp/deploy_guide"
+    source_path: str            # e.g. "raw/myapp/deploy_guide.md"
+    source_sha256: str
+    source_section: str         # e.g. "## Redis"
+    quote: str                  # verbatim quote from source
+    normalized: str             # normalized form for deduplication
+    related_slugs: list[str]    # wiki page slugs this claim supports
+    confidence: float           # 0.0-1.0
+    status: str                 # "active" | "superseded" | "contradicted" | "unresolved" | "ignored"
+    chunk_id: str               # which chunk produced this claim
+    project: str
+    created: str                # ISO date
+
+    @property
+    def file_path(self) -> str:
+        """Relative path within wiki/_claims/ for this claim."""
+        safe_source = self.source_id.replace("/", "__")
+        return f"_claims/{self.project}/{safe_source}/{self.chunk_id}/{self.claim_id.split('#')[-1]}.md"
 
 
 # ─────────────────────────────────────────────
@@ -463,6 +558,216 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
 
         return sorted(results, key=lambda x: -x["score"])
 
+    def search_pages_weighted(
+        self,
+        query: str,
+        project: str | None = None,
+        projects: list[str] | None = None,
+        top_k: int = 20,
+    ) -> list[dict]:
+        """
+        Weighted field search across wiki pages.
+
+        score =
+          8 * matches_in_title +
+          5 * matches_in_tags +
+          4 * matches_in_summary +
+          3 * matches_in_headings +
+          1 * matches_in_body
+
+        Returns list of {slug, title, project, excerpt, score, field_scores}
+        sorted by score desc.
+        """
+        words = query.lower().split()
+        if not words:
+            return []
+
+        results = []
+
+        for page in self.list_pages(project=project, projects=projects):
+            title_lower = page.title.lower()
+            tags_lower = [t.lower() for t in page.tags]
+            synopsis = page.meta.get("synopsis", "")
+            synopsis_lower = synopsis.lower()
+
+            # Extract headings
+            headings_text = " ".join(
+                h.strip("# ").lower()
+                for h in re.findall(r"^#{1,6}\s+(.+)$", page.content, re.MULTILINE)
+            )
+
+            body_lower = page.content.lower()
+
+            title_score = sum(1 for w in words if w in title_lower)
+            tag_score = sum(1 for w in words for t in tags_lower if w in t)
+            synopsis_score = sum(1 for w in words if w in synopsis_lower)
+            heading_score = sum(1 for w in words if w in headings_text)
+            body_score = sum(body_lower.count(w) for w in words)
+
+            total = (
+                8 * title_score
+                + 5 * tag_score
+                + 4 * synopsis_score
+                + 3 * heading_score
+                + 1 * body_score
+            )
+
+            if total == 0:
+                continue
+
+            excerpt = _extract_excerpt(page.content, words[0])
+            results.append({
+                "slug": page.slug,
+                "title": page.title,
+                "project": page.project,
+                "excerpt": excerpt,
+                "score": total,
+                "field_scores": {
+                    "title": title_score,
+                    "tags": tag_score,
+                    "summary": synopsis_score,
+                    "headings": heading_score,
+                    "body": body_score,
+                },
+            })
+
+        return sorted(results, key=lambda x: -x["score"])[:top_k]
+
+    def read_page_outline(self, slug: str) -> PageOutline | None:
+        """
+        Return structured outline of a wiki page.
+
+        Returns title, synopsis, tags, headings with anchors and previews,
+        wikilinks, and metadata. Used by QueryAgent for index-first retrieval.
+        """
+        page = self.read_page(slug)
+        if page is None:
+            return None
+
+        # Synopsis: from frontmatter or first non-heading paragraph
+        synopsis = page.meta.get("synopsis", "")
+        if not synopsis:
+            first_para = re.search(r"^(?!#)(.+)$", page.content, re.MULTILINE)
+            if first_para:
+                synopsis = first_para.group(1).strip()[:300]
+
+        # Parse headings
+        headings = []
+        heading_pattern = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
+
+        for match in heading_pattern.finditer(page.content):
+            level = len(match.group(1))
+            text = match.group(2).strip()
+            anchor = heading_to_anchor(text)
+
+            # Find content until next heading of same or higher level
+            start = match.end()
+            next_heading = heading_pattern.search(page.content, start)
+            if next_heading:
+                section_text = page.content[start:next_heading.start()].strip()
+            else:
+                section_text = page.content[start:].strip()
+
+            preview = section_text[:200].replace("\n", " ") if section_text else ""
+
+            headings.append({
+                "text": text,
+                "anchor": anchor,
+                "level": level,
+                "char_count": len(section_text),
+                "preview": preview,
+            })
+
+        return PageOutline(
+            slug=page.slug,
+            title=page.title,
+            project=page.project,
+            page_type=page.page_type,
+            tags=page.tags,
+            synopsis=synopsis,
+            headings=headings,
+            wikilinks=page.wikilinks,
+            char_count=page.char_count,
+            confidence=page.confidence,
+        )
+
+    def read_page_section(
+        self,
+        slug: str,
+        heading: str,
+        char_limit: int | None = None,
+    ) -> SectionContent | None:
+        """
+        Return full text of a specific section identified by heading text.
+
+        heading: exact heading text or anchor slug.
+        char_limit: optional max chars to return (None = unlimited).
+        """
+        page = self.read_page(slug)
+        if page is None:
+            return None
+
+        heading_pattern = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
+        matches = list(heading_pattern.finditer(page.content))
+
+        # Find the matching heading
+        target_idx = None
+        heading_lower = heading.lower().strip()
+
+        for i, match in enumerate(matches):
+            text = match.group(2).strip()
+            anchor = heading_to_anchor(text)
+            if heading_lower == text.lower() or heading_lower == anchor.lower():
+                target_idx = i
+                break
+
+        if target_idx is None:
+            return None
+
+        match = matches[target_idx]
+        start = match.end()
+        next_match = matches[target_idx + 1] if target_idx + 1 < len(matches) else None
+
+        if next_match:
+            section_text = page.content[start:next_match.start()].strip()
+        else:
+            section_text = page.content[start:].strip()
+
+        # Apply char limit if specified
+        if char_limit and len(section_text) > char_limit:
+            section_text = section_text[:char_limit - 40] + "\n\n… [TRIMMED]"
+
+        # Extract provenance markers
+        provenance = re.findall(r"\^\[([^\]]+)\]", section_text)
+
+        # Extract source refs (raw file paths mentioned)
+        source_refs = re.findall(r"raw/([^\s\]]+)", section_text)
+
+        return SectionContent(
+            slug=page.slug,
+            heading=match.group(2).strip(),
+            anchor=heading_to_anchor(match.group(2).strip()),
+            content=section_text,
+            char_count=len(section_text),
+            provenance_markers=provenance,
+            source_refs=source_refs,
+        )
+
+    def multi_read_sections(
+        self,
+        requests: list[dict],
+    ) -> list[SectionContent | None]:
+        """
+        Batch-read multiple sections from multiple pages.
+
+        requests: list of {slug, heading, char_limit?}
+        Returns list of SectionContent or None (if not found).
+        """
+        return [
+            self.read_page_section(r["slug"], r["heading"], r.get("char_limit"))
+            for r in requests
+        ]
+
     # ── Page WRITE operations ────────────────────────────────────
 
     def write_page(
@@ -503,6 +808,60 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         logger.info("Page %s: slug=%s chars=%d", action, slug, len(raw))
 
         return self._parse_page(path, slug)
+
+    def apply_safe_update(
+        self,
+        slug: str,
+        plan,
+        force: bool = False,
+    ) -> tuple[WikiPage, PageUpdateDiff]:
+        """
+        Apply a typed page update plan with diff generation.
+
+        If the update requires review and force=False, raises ReviewRequiredError.
+        Returns (updated_page, diff) tuple.
+        """
+        from app.core.safe_page_updates import (
+            generate_diff,
+            validate_plan,
+        )
+
+        page = self.read_page(slug)
+        if page is None:
+            raise WikiFSError(f"Page not found: {slug}")
+
+        # Validate plan
+        errors = validate_plan(plan)
+        if errors:
+            raise WikiFSError(f"Invalid update plan for {slug}: {'; '.join(errors)}")
+
+        # Generate diff
+        diff = generate_diff(page, plan, self.limits.entity_page_chars // 2)
+
+        # Check review requirement
+        if diff.requires_review and not force:
+            raise ReviewRequiredError(
+                slug=slug,
+                diff=diff,
+                reason=diff.review_reason,
+            )
+
+        # Apply and write
+        meta, content = _apply_ops(page, plan)
+        return self.write_page(slug, meta=meta, content=content), diff
+
+    def generate_update_diff(
+        self,
+        slug: str,
+        plan,
+    ) -> PageUpdateDiff | None:
+        """Generate diff for a planned update without applying it."""
+        from app.core.safe_page_updates import generate_diff
+
+        page = self.read_page(slug)
+        if page is None:
+            return None
+        return generate_diff(page, plan)
 
     def delete_page(self, slug: str) -> bool:
         path = self._slug_to_path(slug)
@@ -675,6 +1034,382 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         if relative_path in manifest:
             manifest[relative_path]["status"] = "removed"
             self._write_manifest(manifest)
+
+    # ── Source Card operations ────────────────────────────────────
+
+    def compute_source_sha256(self, content: str) -> str:
+        """Compute SHA256 hash of source content."""
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    def _source_card_path(self, source_id: str) -> Path:
+        """Return path for a Source Card: wiki/_sources/<project>/<source-slug>.md"""
+        return self._resolve_in_dir(self.wiki_dir, f"_sources/{source_id}.md")
+
+    def write_source_card(self, card: SourceCard) -> None:
+        """Write or update a Source Card to wiki/_sources/."""
+        path = self._source_card_path(card.source_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        meta = {
+            "title": card.title,
+            "project": card.project,
+            "type": "source",
+            "tags": ["source", "ingest"],
+            "confidence": 1.0,
+            "sources": 1,
+            "last_confirmed": card.last_confirmed,
+            "supersedes": None,
+            "superseded_by": None,
+            "created": card.created,
+            # Source Card specific fields
+            "source_id": card.source_id,
+            "source_path": card.source_path,
+            "source_sha256": card.source_sha256,
+            "ingest_status": card.ingest_status,
+            "outline": card.outline,
+            "chunk_count": card.chunk_count,
+            "chunks_processed": card.chunks_processed,
+            "chunks_failed": card.chunks_failed,
+            "pages_planned": card.pages_planned,
+            "pages_written": card.pages_written,
+            "conflicts_opened": card.conflicts_opened,
+            "claims_files": card.claims_files,
+            "drift_status": card.drift_status,
+        }
+
+        # Build content section
+        outline_lines = []
+        for item in card.outline:
+            indent = "  " * (item.get("level", 1) - 1)
+            outline_lines.append(f"{indent}- {item['text']} ({item.get('char_count', 0)} chars)")
+
+        content = (
+            f"# {card.title}\n\n"
+            f"**Source:** `{card.source_path}`\n"
+            f"**SHA256:** `{card.source_sha256[:16]}...`\n"
+            f"**Status:** {card.ingest_status}\n"
+            f"**Drift:** {card.drift_status}\n\n"
+            f"## Outline\n\n"
+            + "\n".join(outline_lines)
+            + f"\n\n## Stats\n\n"
+            f"- Chunks: {card.chunks_processed}/{card.chunk_count} processed"
+            f" ({card.chunks_failed} failed)\n"
+            f"- Pages written: {len(card.pages_written)}\n"
+            f"- Conflicts opened: {len(card.conflicts_opened)}\n"
+            f"- Claims files: {len(card.claims_files)}\n"
+        )
+
+        post = frontmatter.Post(content, **meta)
+        raw = frontmatter.dumps(post)
+        path.write_text(raw, encoding="utf-8")
+        logger.info("Source Card written: id=%s status=%s", card.source_id, card.ingest_status)
+
+    def read_source_card(self, source_id: str) -> SourceCard | None:
+        """Read a Source Card by source_id. Returns None if not found."""
+        path = self._source_card_path(source_id)
+        if not path.exists():
+            return None
+        try:
+            raw = path.read_text(encoding="utf-8")
+            post = frontmatter.loads(raw)
+            meta = post.metadata
+
+            def _date_or_today(field: str) -> str:
+                val = meta.get(field, "")
+                if isinstance(val, date):
+                    return val.isoformat()
+                return val or date.today().isoformat()
+
+            return SourceCard(
+                source_id=meta.get("source_id", source_id),
+                source_path=meta.get("source_path", ""),
+                source_sha256=meta.get("source_sha256", ""),
+                title=meta.get("title", f"Source: {source_id}"),
+                project=meta.get("project", "_general"),
+                ingest_status=meta.get("ingest_status", "unknown"),
+                created=_date_or_today("created"),
+                last_confirmed=_date_or_today("last_confirmed"),
+                last_ingested=meta.get("last_ingested", ""),
+                outline=meta.get("outline", []),
+                chunk_count=meta.get("chunk_count", 0),
+                chunks_processed=meta.get("chunks_processed", 0),
+                chunks_failed=meta.get("chunks_failed", 0),
+                pages_planned=meta.get("pages_planned", []),
+                pages_written=meta.get("pages_written", []),
+                conflicts_opened=meta.get("conflicts_opened", []),
+                claims_files=meta.get("claims_files", []),
+                drift_status=meta.get("drift_status", "unknown"),
+            )
+        except Exception as exc:
+            logger.error("Source Card parse error: id=%s error=%s", source_id, exc)
+            return None
+
+    def list_source_cards(self, project: str | None = None) -> list[SourceCard]:
+        """List all Source Cards, optionally filtered by project."""
+        cards = []
+        sources_dir = self.wiki_dir / "_sources"
+        if not sources_dir.exists():
+            return cards
+
+        for path in sorted(sources_dir.rglob("*.md")):
+            slug = path.relative_to(self.wiki_dir).with_suffix("").as_posix()
+            # slug = "_sources/<project>/<source-slug>"
+            parts = slug.split("/", 2)
+            if len(parts) < 3:
+                continue
+            source_id = f"{parts[1]}/{parts[2]}"
+            card = self.read_source_card(source_id)
+            if card is None:
+                continue
+            if project and card.project != project:
+                continue
+            cards.append(card)
+        return cards
+
+    def check_source_drift(self, relative_path: str) -> dict:
+        """
+        Check if a raw source file has drifted since last ingest.
+
+        Returns:
+            {"status": "unchanged"|"changed"|"missing_source"|"no_card",
+             "old_sha256": str | None, "new_sha256": str | None}
+        """
+        # Try to find card by source_path in manifest
+        manifest = self._read_manifest()
+
+        if relative_path not in manifest:
+            # Check if source file exists
+            raw_path = self.raw_dir / relative_path
+            if not raw_path.exists():
+                return {
+                    "status": "missing_source",
+                    "old_sha256": None,
+                    "new_sha256": None,
+                }
+            return {"status": "no_card", "old_sha256": None, "new_sha256": None}
+
+        entry = manifest[relative_path]
+        old_sha = entry.get("sha256")
+
+        # Read current content
+        content = self.read_raw_file(relative_path)
+        if content is None:
+            return {
+                "status": "missing_source",
+                "old_sha256": old_sha,
+                "new_sha256": None,
+            }
+
+        new_sha = self.compute_source_sha256(content)
+
+        if old_sha == new_sha:
+            return {"status": "unchanged", "old_sha256": old_sha, "new_sha256": new_sha}
+
+        return {"status": "changed", "old_sha256": old_sha, "new_sha256": new_sha}
+
+    def update_source_card_drift(self, source_id: str, drift_status: str) -> None:
+        """Update drift_status field on an existing Source Card."""
+        card = self.read_source_card(source_id)
+        if card is None:
+            logger.warning("Cannot update drift: Source Card not found: %s", source_id)
+            return
+        card.drift_status = drift_status
+        if drift_status == "changed":
+            card.ingest_status = "changed"
+        self.write_source_card(card)
+
+    # ── Claim operations ─────────────────────────────────────────
+
+    def _claim_path(self, claim: Claim) -> Path:
+        """Get absolute path for a claim file."""
+        return self._resolve_in_dir(self.wiki_dir, claim.file_path)
+
+    def write_claim(self, claim: Claim) -> Path:
+        """Write a claim to wiki/_claims/. Returns the written path."""
+        path = self._claim_path(claim)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        meta = {
+            "title": f"Claim: {claim.claim_id}",
+            "project": claim.project,
+            "type": "concept",
+            "tags": ["claim", claim.source_id, claim.status],
+            "confidence": claim.confidence,
+            "sources": 1,
+            "last_confirmed": claim.created,
+            "supersedes": None,
+            "superseded_by": None,
+            "created": claim.created,
+            # Claim-specific fields
+            "claim_id": claim.claim_id,
+            "source_id": claim.source_id,
+            "source_path": claim.source_path,
+            "source_sha256": claim.source_sha256,
+            "source_section": claim.source_section,
+            "quote": claim.quote,
+            "normalized": claim.normalized,
+            "related_slugs": claim.related_slugs,
+            "status": claim.status,
+            "chunk_id": claim.chunk_id,
+        }
+
+        content = (
+            f"# {claim.claim_id}\n\n"
+            f"**Source:** `{claim.source_path}`\n"
+            f"**Section:** {claim.source_section}\n"
+            f"**Status:** {claim.status}\n\n"
+            f"## Quote\n\n"
+            f"> {claim.quote}\n\n"
+            f"## Normalized\n\n"
+            f"{claim.normalized}\n\n"
+            f"## Related Pages\n\n"
+            + "\n".join(f"- [[{s}]]" for s in claim.related_slugs)
+            + "\n"
+        )
+
+        post = frontmatter.Post(content, **meta)
+        raw = frontmatter.dumps(post)
+        path.write_text(raw, encoding="utf-8")
+        logger.debug("Claim written: id=%s status=%s", claim.claim_id, claim.status)
+        return path
+
+    def read_claim(self, claim_id: str, project: str, source_id: str, chunk_id: str) -> Claim | None:
+        """Read a specific claim by its identifiers."""
+        safe_source = source_id.replace("/", "__")
+        rel_path = f"_claims/{project}/{safe_source}/{chunk_id}/{claim_id.split('#')[-1]}.md"
+        path = self._resolve_in_dir(self.wiki_dir, rel_path)
+        if not path.exists():
+            return None
+        try:
+            raw = path.read_text(encoding="utf-8")
+            post = frontmatter.loads(raw)
+            meta = post.metadata
+
+            def _date_or(field: str, default: str) -> str:
+                val = meta.get(field, default)
+                return val.isoformat() if isinstance(val, date) else (val or default)
+
+            return Claim(
+                claim_id=meta.get("claim_id", claim_id),
+                source_id=meta.get("source_id", source_id),
+                source_path=meta.get("source_path", ""),
+                source_sha256=meta.get("source_sha256", ""),
+                source_section=meta.get("source_section", ""),
+                quote=meta.get("quote", ""),
+                normalized=meta.get("normalized", ""),
+                related_slugs=meta.get("related_slugs", []),
+                confidence=float(meta.get("confidence", 1.0)),
+                status=meta.get("status", "active"),
+                chunk_id=meta.get("chunk_id", chunk_id),
+                project=project,
+                created=_date_or("created", date.today().isoformat()),
+            )
+        except Exception as exc:
+            logger.error("Claim parse error: id=%s error=%s", claim_id, exc)
+            return None
+
+    def list_claims(
+        self,
+        project: str | None = None,
+        source_id: str | None = None,
+        status: str | None = None,
+    ) -> list[Claim]:
+        """List claims with optional filters."""
+        claims = []
+        claims_dir = self.wiki_dir / "_claims"
+        if not claims_dir.exists():
+            return claims
+
+        for path in sorted(claims_dir.rglob("*.md")):
+            try:
+                raw = path.read_text(encoding="utf-8")
+                post = frontmatter.loads(raw)
+                meta = post.metadata
+
+                claim_project = meta.get("project", "_general")
+                claim_source = meta.get("source_id", "")
+                claim_status = meta.get("status", "active")
+
+                if project and claim_project != project:
+                    continue
+                if source_id and claim_source != source_id:
+                    continue
+                if status and claim_status != status:
+                    continue
+
+                created_val = meta.get("created", date.today().isoformat())
+                created = created_val.isoformat() if isinstance(created_val, date) else (created_val or date.today().isoformat())
+
+                claims.append(Claim(
+                    claim_id=meta.get("claim_id", ""),
+                    source_id=claim_source,
+                    source_path=meta.get("source_path", ""),
+                    source_sha256=meta.get("source_sha256", ""),
+                    source_section=meta.get("source_section", ""),
+                    quote=meta.get("quote", ""),
+                    normalized=meta.get("normalized", ""),
+                    related_slugs=meta.get("related_slugs", []),
+                    confidence=float(meta.get("confidence", 1.0)),
+                    status=claim_status,
+                    chunk_id=meta.get("chunk_id", ""),
+                    project=claim_project,
+                    created=created,
+                ))
+            except Exception as exc:
+                logger.debug("Skipping claim file %s: %s", path, exc)
+
+        return claims
+
+    def find_duplicate_claim(
+        self,
+        normalized: str,
+        source_id: str,
+    ) -> Claim | None:
+        """
+        Check if a claim with the same normalized text already exists
+        for the same source. Returns the existing claim if found.
+        """
+        normalized_key = normalized[:100].lower().strip()
+        existing = self.list_claims(source_id=source_id, status="active")
+        for claim in existing:
+            if claim.normalized[:100].lower().strip() == normalized_key:
+                return claim
+        return None
+
+    def update_claim_status(self, claim_id: str, project: str, source_id: str, chunk_id: str, new_status: str) -> bool:
+        """Update the status of an existing claim."""
+        claim = self.read_claim(claim_id, project, source_id, chunk_id)
+        if claim is None:
+            return False
+        claim.status = new_status
+        self.write_claim(claim)
+        return True
+
+    def get_claims_for_page(self, slug: str) -> list[Claim]:
+        """Get all active claims that reference a given wiki page."""
+        all_claims = self.list_claims(status="active")
+        return [c for c in all_claims if slug in c.related_slugs]
+
+    def detect_claim_conflicts(self, source_id: str) -> list[tuple[Claim, Claim]]:
+        """
+        Detect conflicting claims within the same source.
+
+        Returns list of (claim_a, claim_b) pairs where claims have
+        contradictory statuses or normalized text suggests contradiction.
+        """
+        conflicts = []
+        claims = self.list_claims(source_id=source_id, status="active")
+
+        for i, claim_a in enumerate(claims):
+            for claim_b in claims[i + 1:]:
+                # Check if they reference the same page but have different info
+                common_slugs = set(claim_a.related_slugs) & set(claim_b.related_slugs)
+                if common_slugs:
+                    # Same page, different claims — potential conflict
+                    if claim_a.confidence > 0.7 and claim_b.confidence > 0.7:
+                        conflicts.append((claim_a, claim_b))
+
+        return conflicts
 
     # ── Conflicts operations ─────────────────────────────────────
 
@@ -1430,7 +2165,7 @@ def _render_conflict_block(entry: ConflictEntry) -> str:
         if entry.description else ""
     )
     cross_project_line = (
-        f"- **Cross-project:** true\n"
+        "- **Cross-project:** true\n"
         if entry.is_cross_project else ""
     )
     return (
@@ -1504,3 +2239,111 @@ _SKILLS_TEMPLATE = """# Skills
 
 ## Ingest Patterns
 """
+
+
+def _apply_ops(page: WikiPage, plan) -> tuple[dict, str]:
+    """Apply a PageWritePlan to a WikiPage, returning (meta, content)."""
+    from app.core.safe_page_updates import (
+        AddProvenanceMarker,
+        AppendSection,
+        ReplaceSection,
+        UpdateFrontmatterField,
+    )
+
+    meta = dict(page.meta)
+    content = page.content
+
+    for op in plan.operations:
+        if isinstance(op, ReplaceSection):
+            content = _replace_section(content, op)
+        elif isinstance(op, AppendSection):
+            content = _append_section(content, op)
+        elif isinstance(op, UpdateFrontmatterField):
+            meta = _update_fm_field(meta, op)
+        elif isinstance(op, AddProvenanceMarker):
+            content = _add_prov_marker(content, op)
+
+    meta.setdefault("last_confirmed", date.today().isoformat())
+    meta.setdefault("created", page.meta.get("created", date.today().isoformat()))
+    return meta, content
+
+
+def _replace_section(content: str, op) -> str:
+    heading_re = re.compile(
+        rf"^(#{{1,6}})\s+{re.escape(op.heading)}\s*$",
+        re.MULTILINE,
+    )
+    match = heading_re.search(content)
+    if not match:
+        raise ValueError(f"Heading not found: '{op.heading}'")
+
+    heading_level = len(match.group(1))
+    start = match.end()
+
+    next_heading_re = re.compile(
+        rf"^(#{{1,{heading_level}}})\s+",
+        re.MULTILINE,
+    )
+    next_match = next_heading_re.search(content, start)
+
+    if next_match:
+        old_section = content[start:next_match.start()]
+        new_content = content[:start] + "\n" + op.new_content + "\n\n" + content[next_match.start():]
+    else:
+        old_section = content[start:]
+        new_content = content[:start] + "\n" + op.new_content + "\n"
+
+    if op.preserve_provenance:
+        existing_markers = re.findall(r"\^\[([^\]]+)\]", old_section)
+        for marker in existing_markers:
+            if f"^[{marker}]" not in new_content:
+                new_content = new_content.rstrip() + f"\n\n^[{marker}]\n"
+
+    return new_content
+
+
+def _append_section(content: str, op) -> str:
+    heading_re = re.compile(
+        rf"^(#{{1,6}})\s+{re.escape(op.heading)}\s*$",
+        re.MULTILINE,
+    )
+    match = heading_re.search(content)
+
+    if not match:
+        if op.as_subsection:
+            headings = list(re.finditer(r"^(#{1,6})\s+(.+)$", content, re.MULTILINE))
+            if headings:
+                last = headings[-1]
+                insert_pos = last.end()
+                next_h = re.search(r"^(#{1,6})\s+", content[insert_pos:], re.MULTILINE)
+                if next_h:
+                    insert_pos = insert_pos + next_h.start()
+                new_heading = f"\n## {op.heading}\n\n{op.content}\n"
+                return content[:insert_pos] + new_heading + content[insert_pos:]
+            return content + f"\n## {op.heading}\n\n{op.content}\n"
+        return content.rstrip() + f"\n\n## {op.heading}\n\n{op.content}\n"
+
+    start = match.end()
+    next_heading_re = re.compile(r"^(#{1,6})\s+", re.MULTILINE)
+    next_match = next_heading_re.search(content, start)
+
+    if next_match:
+        return content[:next_match.start()] + "\n" + op.content + "\n\n" + content[next_match.start():]
+    return content.rstrip() + "\n\n" + op.content + "\n"
+
+
+def _update_fm_field(meta: dict, op) -> dict:
+    if op.field_value is None:
+        meta.pop(op.field_name, None)
+    else:
+        meta[op.field_name] = op.field_value
+    return meta
+
+
+def _add_prov_marker(content: str, op) -> str:
+    idx = content.find(op.after_text)
+    if idx == -1:
+        return content.rstrip() + f"\n\n^[{op.source_ref}]\n"
+    insert_pos = idx + len(op.after_text)
+    marker = f" ^[{op.source_ref}]"
+    return content[:insert_pos] + marker + content[insert_pos:]

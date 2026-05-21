@@ -45,6 +45,12 @@ ISSUE_KINDS = {
     "duplicate_title",
     "missing_wikilink",
     "invalid_provenance",
+    "source_drift",
+    "missing_source",
+    "orphan_source_card",
+    "orphan_claim",
+    "claim_without_source_card",
+    "contradicted_claim_still_active",
 }
 
 
@@ -149,6 +155,8 @@ class WikiLinter:
         # Global checks (always run for full picture)
         issues += self._check_orphans(target_pages)
         issues += self._check_duplicate_titles(target_pages)
+        issues += self._check_source_drift()
+        issues += self._check_claims()
 
         return LintReport(
             ran_at=datetime.now().isoformat(timespec="seconds"),
@@ -190,7 +198,7 @@ class WikiLinter:
                     severity="error",
                     fix_hint=f"Исправьте тип '{field_name}' в frontmatter",
                 ))
-        if page.meta.get("type") not in {"entity", "concept", "index", "log", None}:
+        if page.meta.get("type") not in {"entity", "concept", "index", "log", "source", None}:
             issues.append(LintIssue(
                 slug=page.slug, line=0,
                 kind="missing_frontmatter",
@@ -410,6 +418,119 @@ class WikiLinter:
         return issues
 
     # ── Helpers ──────────────────────────────────────────────────
+
+    def _check_source_drift(self) -> list[LintIssue]:
+        """Check all Source Cards for drift against raw sources."""
+        issues = []
+        cards = self.fs.list_source_cards()
+
+        for card in cards:
+            if card.drift_status == "unchanged":
+                continue
+
+            if card.drift_status == "missing_source":
+                issues.append(LintIssue(
+                    slug=card.slug, line=0,
+                    kind="missing_source",
+                    detail=f"Source Card для '{card.source_id}': исходный файл "
+                           f"'{card.source_path}' больше не существует",
+                    severity="warning",
+                    fix_hint="Удалите Source Card или восстановите raw-файл",
+                ))
+                continue
+
+            if card.drift_status == "changed":
+                issues.append(LintIssue(
+                    slug=card.slug, line=0,
+                    kind="source_drift",
+                    detail=f"Source Card для '{card.source_id}': исходный файл "
+                           f"изменился с момента последнего ingest (SHA256 mismatch)",
+                    severity="warning",
+                    fix_hint=f"Запустите re-ingest для '{card.source_path}'",
+                ))
+
+            if card.drift_status == "unknown":
+                # Try to check drift
+                if card.source_path:
+                    rel = card.source_path.replace("raw/", "", 1) if card.source_path.startswith("raw/") else card.source_path
+                    drift = self.fs.check_source_drift(rel)
+                    if drift["status"] == "changed":
+                        issues.append(LintIssue(
+                            slug=card.slug, line=0,
+                            kind="source_drift",
+                            detail=f"Source Card для '{card.source_id}': "
+                                   f"исходный файл изменился (drift detected)",
+                            severity="warning",
+                            fix_hint=f"Запустите re-ingest для '{card.source_path}'",
+                        ))
+                        self.fs.update_source_card_drift(card.source_id, "changed")
+                    elif drift["status"] == "missing_source":
+                        issues.append(LintIssue(
+                            slug=card.slug, line=0,
+                            kind="missing_source",
+                            detail=f"Source Card для '{card.source_id}': "
+                                   f"исходный файл '{card.source_path}' не найден",
+                            severity="warning",
+                            fix_hint="Удалите Source Card или восстановите raw-файл",
+                        ))
+                        self.fs.update_source_card_drift(card.source_id, "missing_source")
+
+        # Check for Source Cards without corresponding wiki pages
+        for card in cards:
+            if card.ingest_status == "active" and not card.pages_written:
+                issues.append(LintIssue(
+                    slug=card.slug, line=0,
+                    kind="orphan_source_card",
+                    detail=f"Source Card '{card.source_id}': активен, но нет записанных страниц",
+                    severity="info",
+                    fix_hint=f"Запустите ingest для '{card.source_path}'",
+                ))
+
+        return issues
+
+    def _check_claims(self) -> list[LintIssue]:
+        """Check claims for orphaned claims, missing source cards, and status issues."""
+        issues = []
+        claims = self.fs.list_claims()
+
+        # Get all known source IDs from Source Cards
+        source_cards = self.fs.list_source_cards()
+        known_source_ids = {card.source_id for card in source_cards}
+
+        for claim in claims:
+            # Check: claim without source card
+            if claim.source_id not in known_source_ids:
+                issues.append(LintIssue(
+                    slug=claim.claim_id.replace("/", "_"), line=0,
+                    kind="claim_without_source_card",
+                    detail=f"Claim '{claim.claim_id}': нет соответствующего Source Card "
+                           f"для источника '{claim.source_id}'",
+                    severity="warning",
+                    fix_hint=f"Создайте Source Card для '{claim.source_id}' или удалите claim",
+                ))
+
+            # Check: orphaned claim (no related wiki pages)
+            if claim.status == "active" and not claim.related_slugs:
+                issues.append(LintIssue(
+                    slug=claim.claim_id.replace("/", "_"), line=0,
+                    kind="orphan_claim",
+                    detail=f"Claim '{claim.claim_id}': активен, но не связан ни с одной wiki-страницей",
+                    severity="info",
+                    fix_hint="Свяжите claim с wiki-страницей или измените статус на 'ignored'",
+                ))
+
+            # Check: contradicted claim still marked active
+            if "contradict" in claim.normalized.lower() and claim.status == "active":
+                issues.append(LintIssue(
+                    slug=claim.claim_id.replace("/", "_"), line=0,
+                    kind="contradicted_claim_still_active",
+                    detail=f"Claim '{claim.claim_id}': текст содержит противоречие, "
+                           f"но статус всё ещё 'active'",
+                    severity="warning",
+                    fix_hint="Измените статус claim на 'contradicted' или 'unresolved'",
+                ))
+
+        return issues
 
     def _build_incoming_links(self) -> None:
         """Build reverse link index: slug → set of slugs that link to it."""

@@ -58,9 +58,17 @@ class LimitsSettings:
 @dataclass
 class IngestSettings:
     two_step: bool = True
-    max_pages_per_source: int = 10
+    max_pages_per_source: int = 10        # kept for backward compat, superseded by new limits
     auto_lint_after_ingest: bool = True
     conflict_continue_on_detect: bool = True
+    # Large source ingest settings (Phase 2)
+    large_source_threshold_chars: int = 100_000
+    chunk_min_chars: int = 8_000
+    chunk_target_chars: int = 16_000
+    chunk_max_chars: int = 25_000
+    max_pages_per_batch: int = 10
+    max_auto_write_pages: int = 15
+    require_review_if_pages_gt: int = 25
 
 
 @dataclass
