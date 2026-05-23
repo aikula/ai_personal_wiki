@@ -513,18 +513,20 @@ const { useState, useEffect, useRef, useCallback } = React;
 // ─────────────────────────────────────────────
 // API helpers
 // ─────────────────────────────────────────────
+function getAuthHeaders(extra = {}) {
+  const token = sessionStorage.getItem('wiki_token');
+  return token ? { ...extra, 'Authorization': `Bearer ${token}` } : { ...extra };
+}
+
 const api = {
   async get(path) {
-    const token = sessionStorage.getItem('wiki_token');
-    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    const headers = getAuthHeaders();
     const r = await fetch(`/api${path}`, { headers });
     if (!r.ok) throw new Error(await r.text());
     return r.json();
   },
   async post(path, body) {
-    const token = sessionStorage.getItem('wiki_token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = getAuthHeaders({ 'Content-Type': 'application/json' });
     const r = await fetch(`/api${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
     if (!r.ok) throw new Error(await r.text());
     return r.json();
@@ -535,7 +537,11 @@ const api = {
       const form = new FormData();
       form.append('project', project);
       form.append('file', files[i]);
-      const r = await fetch('/api/ingest', { method: 'POST', body: form });
+      const r = await fetch('/api/ingest', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: form,
+      });
       const data = await r.json();
       results.push(data);
       onProgress(i + 1, files.length);
@@ -550,7 +556,7 @@ function createSSE(path, onEvent, onDone) {
   (async () => {
     const r = await fetch(`/api${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
       signal: ctrl.signal,
     });
     const reader = r.body.getReader();
@@ -616,10 +622,15 @@ function AuthProvider({ children }) {
           const data = await r.json();
           setAuthState({ loading: false, mode: 'multi_user', user: data.user, credits: data.credits });
         } else {
-          // Try health endpoint to detect mode
           const hr = await fetch('/api/health');
           if (hr.ok) {
-            setAuthState({ loading: false, mode: 'personal_local', user: null, credits: null });
+            const data = await hr.json();
+            setAuthState({
+              loading: false,
+              mode: data.mode || 'personal_local',
+              user: null,
+              credits: null,
+            });
           } else {
             setAuthState({ loading: false, mode: 'personal_local', user: null, credits: null });
           }
@@ -668,12 +679,12 @@ function AuthProvider({ children }) {
       try {
         await fetch('/api/auth/logout', {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` },
+          headers: getAuthHeaders(),
         });
       } catch {}
     }
     sessionStorage.removeItem('wiki_token');
-    setAuthState({ loading: false, mode: 'personal_local', user: null, credits: null });
+    setAuthState({ loading: false, mode: 'multi_user', user: null, credits: null });
   };
 
   const refreshCredits = async () => {
@@ -681,7 +692,7 @@ function AuthProvider({ children }) {
     if (!token) return;
     try {
       const r = await fetch('/api/usage/me', {
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: getAuthHeaders(),
       });
       if (r.ok) {
         const data = await r.json();
@@ -848,7 +859,9 @@ function AuditModal({ onClose }) {
     setError(null);
     setResult(null);
     try {
-      const r = await fetch('/api/audit/duplicates');
+      const r = await fetch('/api/audit/duplicates', {
+        headers: getAuthHeaders(),
+      });
       if (!r.ok) {
         const err = await r.json();
         throw new Error(err.detail || `Ошибка: ${r.status}`);
@@ -1154,7 +1167,7 @@ function RebuildModal({ onClose, onRefresh }) {
     addLog('Начало перестройки…', 'info');
     const r = await fetch('/api/ingest/rebuild', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ confirm: true }),
     });
     const reader = r.body.getReader();
@@ -1222,7 +1235,7 @@ function ClearModal({ onClose, onRefresh }) {
     try {
       const r = await fetch('/api/ingest/clear', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ confirm: true }),
       });
       if (!r.ok) {
@@ -2109,7 +2122,10 @@ function App() {
   const deleteSession = async (id, e) => {
     e.stopPropagation();
     try {
-      await fetch(`/api/chat/sessions/${id}`, { method: 'DELETE' });
+      await fetch(`/api/chat/sessions/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
       if (activeSessionId === id) { setActiveSessionId(null); setMessages([]); }
       loadSessions();
     } catch {}
@@ -2146,7 +2162,7 @@ function App() {
     try {
       const resp = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           session_id: sessionId,
           question: q,

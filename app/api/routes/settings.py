@@ -1,9 +1,9 @@
 """
 settings.py — Runtime settings management.
 
-GET  /api/settings        — get current settings (api_key masked)
-POST /api/settings        — update LLM connection settings
-GET  /api/settings/test   — test LLM connectivity
+GET  /api/admin/settings        — get current settings (api_key masked)
+POST /api/admin/settings        — update LLM connection settings
+GET  /api/admin/settings/test   — test LLM connectivity
 """
 
 from __future__ import annotations
@@ -13,10 +13,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.api.dependencies import LLMClient, Settings, get_llm_client, get_settings
+from app.api.dependencies import Settings, build_base_llm_client, get_settings
 from app.api.models import SettingsResponse, UpdateSettingsRequest
+from app.api.routes.auth import get_current_admin
 
-router = APIRouter(prefix="/api/settings", tags=["settings"])
+router = APIRouter(
+    prefix="/api/admin/settings",
+    tags=["admin"],
+    dependencies=[Depends(get_current_admin)],
+)
 
 
 @router.get("/language")
@@ -70,13 +75,14 @@ async def update_settings(
 
 @router.get("/test")
 async def test_llm_connection(
-    llm: Annotated[LLMClient, Depends(get_llm_client)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ):
     """
     Send a minimal test call to LLM to verify connectivity.
     Returns latency and model confirmation.
     """
     import time
+    llm = build_base_llm_client(settings)
     try:
         start = time.monotonic()
         response = await asyncio.to_thread(

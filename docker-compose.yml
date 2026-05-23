@@ -1,12 +1,10 @@
-version: "3.9"
-
 services:
   wiki-engine:
     build: .
     container_name: wiki-engine
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${APP_PORT:-8000}:8000"
     volumes:
       # Wiki data: persisted on host, survives container rebuild
       - ./wiki-data:/wiki-data
@@ -14,11 +12,31 @@ services:
       - ./app:/app/app
       - ./config:/app/config
     environment:
-      # LLM config — override here or in .env file
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      # App mode
+      APP_MODE: ${APP_MODE:-personal_local}
+      LANGUAGE: ${LANGUAGE:-ru}
+      WIKI_DATA_PATH: /wiki-data
+
+      # Multi-user / control plane
+      CONTROL_DB_URL: ${CONTROL_DB_URL:-sqlite:////wiki-data/control.db}
+      WIKI_WORKSPACES_ROOT: ${WIKI_WORKSPACES_ROOT:-/wiki-data/workspaces}
+      MULTI_USER_ADMIN_EMAILS: ${MULTI_USER_ADMIN_EMAILS:-}
+      MULTI_USER_ADMIN_EMAIL: ${MULTI_USER_ADMIN_EMAIL:-}
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+      DEFAULT_DAILY_TOKENS: ${DEFAULT_DAILY_TOKENS:-30000}
+      DEFAULT_WELCOME_TOKENS: ${DEFAULT_WELCOME_TOKENS:-200000}
+      DAILY_RESET_TIMEZONE: ${DAILY_RESET_TIMEZONE:-UTC}
+
+      # Optional extra protection for personal_server
+      WIKI_AUTH_ENABLED: ${WIKI_AUTH_ENABLED:-false}
+      WIKI_AUTH_USERNAME: ${WIKI_AUTH_USERNAME:-}
+      WIKI_AUTH_PASSWORD: ${WIKI_AUTH_PASSWORD:-}
+
+      # LLM config
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       LLM_BASE_URL:   ${LLM_BASE_URL:-https://api.openai.com/v1}
       LLM_MODEL:      ${LLM_MODEL:-gpt-4o}
-      WIKI_DATA_PATH: /wiki-data
+      LLM_API_KEY:    ${LLM_API_KEY:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s

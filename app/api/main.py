@@ -6,7 +6,7 @@ Mounts:
   /api/chat      — streaming chat, sessions
   /api/wiki      — page tree, rendering, search
   /api/conflicts — conflict queue management
-  /api/settings  — LLM connection config
+  /api/admin/settings — server-level LLM connection config
   /              — serves ui/index.html (SPA)
 """
 
@@ -20,14 +20,15 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.api.dependencies import get_llm_client, get_settings
+from app.api.dependencies import build_base_llm_client, build_control_store, get_settings
 from app.api.routes import audit as audit_route
 from app.api.routes import auth, chat, conflicts, ingest, usage, wiki
 from app.api.routes import settings as settings_route
 from app.config import Settings, setup_logging
+from app.core.metered_llm_client import QuotaExceededError, UsageRecordingError
 
 setup_logging()
 logger = logging.getLogger("wiki.api")
@@ -109,7 +110,7 @@ async def _check_llm_connection() -> dict:
         logger.warning(message)
         return {"connected": False, "warning": message}
 
-    llm = get_llm_client(settings)
+    llm = build_base_llm_client(settings)
     try:
         response = await asyncio.to_thread(
             llm.call,
@@ -134,12 +135,40 @@ async def _check_llm_connection() -> dict:
 async def startup_checks() -> None:
     settings = get_settings()
     _check_auth_config(settings)
+    if settings.app_mode == "multi_user":
+        build_control_store(settings)
     app.state.llm_status = await _check_llm_connection()
+
+
+@app.exception_handler(QuotaExceededError)
+async def quota_exceeded_handler(_: Request, exc: QuotaExceededError) -> JSONResponse:
+    return JSONResponse(
+        status_code=429,
+        content={
+            "detail": str(exc),
+            "code": "quota_exceeded",
+            "required": exc.required,
+            "available": exc.available,
+        },
+    )
+
+
+@app.exception_handler(UsageRecordingError)
+async def usage_recording_handler(_: Request, exc: UsageRecordingError) -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": str(exc),
+            "code": "usage_recording_failed",
+        },
+    )
 
 # ── Health check ─────────────────────────────────────────────────
 @app.get("/api/health")
 async def health():
+    settings = get_settings()
     payload = {"status": "ok", "service": "wiki-engine"}
+    payload["mode"] = settings.app_mode
     payload["llm"] = getattr(app.state, "llm_status", {"connected": None})
     return payload
 

@@ -37,6 +37,7 @@ async def test_health(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "ok"
+    assert data["mode"] == "personal_local"
     assert "llm" in data
 
 
@@ -134,7 +135,7 @@ async def test_rebuild_requires_confirm(client):
 
 @pytest.mark.asyncio
 async def test_settings_get(client):
-    resp = await client.get("/api/settings")
+    resp = await client.get("/api/admin/settings")
     assert resp.status_code == 200
 
 

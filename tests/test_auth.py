@@ -1,12 +1,12 @@
 """Tests for auth routes."""
 
+from unittest.mock import MagicMock
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.api.main import app as fastapi_app
 from app.config import Settings
-from app.core.control_store import SQLiteControlStore
-from app.core.migrations.runner import run_migrations
 
 
 @pytest.fixture(autouse=True)
@@ -198,6 +198,140 @@ async def test_usage_endpoint(client):
 
 
 @pytest.mark.asyncio
+async def test_configured_admin_gets_admin_flag(client, test_settings):
+    test_settings.multi_user.admin_emails = ["admin@example.com"]
+
+    resp = await client.post("/api/auth/register", json={
+        "email": "admin@example.com",
+        "password": "securepassword123",
+    })
+
+    assert resp.status_code == 200
+    assert resp.json()["user"]["is_admin"] is True
+
+
+@pytest.mark.asyncio
+async def test_multi_user_wiki_tree_requires_token(client):
+    resp = await client.get("/api/wiki/tree")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_multi_user_ingest_requires_token(client):
+    resp = await client.post(
+        "/api/ingest",
+        data={"project": "_general"},
+        files={"file": ("test.txt", b"hello", "text/plain")},
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_non_admin_cannot_read_global_settings(client):
+    reg_resp = await client.post("/api/auth/register", json={
+        "email": "user@example.com",
+        "password": "securepassword123",
+    })
+    token = reg_resp.json()["token"]
+
+    resp = await client.get("/api/admin/settings", headers={
+        "Authorization": f"Bearer {token}",
+    })
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_non_admin_cannot_read_settings_language(client):
+    reg_resp = await client.post("/api/auth/register", json={
+        "email": "user2@example.com",
+        "password": "securepassword123",
+    })
+    token = reg_resp.json()["token"]
+
+    resp = await client.get("/api/admin/settings/language", headers={
+        "Authorization": f"Bearer {token}",
+    })
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_non_admin_cannot_test_global_settings(client):
+    reg_resp = await client.post("/api/auth/register", json={
+        "email": "user3@example.com",
+        "password": "securepassword123",
+    })
+    token = reg_resp.json()["token"]
+
+    resp = await client.get("/api/admin/settings/test", headers={
+        "Authorization": f"Bearer {token}",
+    })
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_can_manage_global_settings(client, test_settings):
+    test_settings.multi_user.admin_emails = ["admin@example.com"]
+    reg_resp = await client.post("/api/auth/register", json={
+        "email": "admin@example.com",
+        "password": "securepassword123",
+    })
+    token = reg_resp.json()["token"]
+
+    get_resp = await client.get("/api/admin/settings", headers={
+        "Authorization": f"Bearer {token}",
+    })
+    assert get_resp.status_code == 200
+
+    language_resp = await client.get("/api/admin/settings/language", headers={
+        "Authorization": f"Bearer {token}",
+    })
+    assert language_resp.status_code == 200
+
+    post_resp = await client.post(
+        "/api/admin/settings",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"llm_model": "gpt-4.1-mini"},
+    )
+    assert post_resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_admin_settings_test_does_not_consume_user_quota(client, test_settings, monkeypatch):
+    test_settings.multi_user.admin_emails = ["admin@example.com"]
+    reg_resp = await client.post("/api/auth/register", json={
+        "email": "admin@example.com",
+        "password": "securepassword123",
+    })
+    token = reg_resp.json()["token"]
+
+    mock_llm = MagicMock()
+    mock_llm.model = "fake-model"
+    mock_llm.call.return_value = '{"status":"ok"}'
+    monkeypatch.setattr("app.api.routes.settings.build_base_llm_client", lambda settings: mock_llm)
+
+    usage_before = await client.get("/api/usage/me", headers={
+        "Authorization": f"Bearer {token}",
+    })
+    assert usage_before.status_code == 200
+    before = usage_before.json()
+
+    resp = await client.get("/api/admin/settings/test", headers={
+        "Authorization": f"Bearer {token}",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["connected"] is True
+
+    usage_after = await client.get("/api/usage/me", headers={
+        "Authorization": f"Bearer {token}",
+    })
+    assert usage_after.status_code == 200
+    after = usage_after.json()
+
+    assert after["daily"]["used"] == before["daily"]["used"]
+    assert after["welcome"]["used"] == before["welcome"]["used"]
+
+
+@pytest.mark.asyncio
 async def test_workspace_isolation(monkeypatch, tmp_path):
     """Two users get separate workspace directories."""
     s = Settings()
@@ -230,4 +364,3 @@ async def test_workspace_isolation(monkeypatch, tmp_path):
         assert (ws_root / user_a).exists()
         assert (ws_root / user_b).exists()
         assert (ws_root / user_a) != (ws_root / user_b)
-
