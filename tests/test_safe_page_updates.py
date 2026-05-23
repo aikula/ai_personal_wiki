@@ -18,7 +18,7 @@ from app.core.safe_page_updates import (
     validate_operation,
     validate_plan,
 )
-from app.core.wiki_fs import WikiFS, WikiPage
+from app.core.wiki_fs import WikiFS, WikiFSError
 
 
 @pytest.fixture
@@ -61,7 +61,7 @@ class TestReplaceSection:
             slug="test/replace",
             operations=[ReplaceSection(heading="Features", new_content="New features content.")],
         )
-        meta, new_content = apply_operations(page, plan)
+        _, new_content = apply_operations(page, plan)
 
         assert "New features content." in new_content
         assert "Old intro." in new_content  # preserved
@@ -75,7 +75,7 @@ class TestReplaceSection:
             slug="test/prov",
             operations=[ReplaceSection(heading="Data", new_content="New fact.")],
         )
-        meta, new_content = apply_operations(page, plan)
+        _, new_content = apply_operations(page, plan)
 
         assert "^[raw/source.md]" in new_content
 
@@ -98,7 +98,7 @@ class TestReplaceSection:
             slug="test/nested",
             operations=[ReplaceSection(heading="Sub", new_content="New sub content.")],
         )
-        meta, new_content = apply_operations(page, plan)
+        _, new_content = apply_operations(page, plan)
 
         assert "New sub content." in new_content
         assert "Other content." in new_content  # preserved
@@ -115,7 +115,7 @@ class TestAppendSection:
             slug="test/append",
             operations=[AppendSection(heading="Features", content="Feature B.")],
         )
-        meta, new_content = apply_operations(page, plan)
+        _, new_content = apply_operations(page, plan)
 
         assert "Feature A." in new_content
         assert "Feature B." in new_content
@@ -128,7 +128,7 @@ class TestAppendSection:
             slug="test/newsection",
             operations=[AppendSection(heading="New Section", content="New content.")],
         )
-        meta, new_content = apply_operations(page, plan)
+        _, new_content = apply_operations(page, plan)
 
         assert "## New Section" in new_content
         assert "New content." in new_content
@@ -141,7 +141,7 @@ class TestAppendSection:
             slug="test/subsec",
             operations=[AppendSection(heading="Sub", content="Sub text.", as_subsection=True)],
         )
-        meta, new_content = apply_operations(page, plan)
+        _, new_content = apply_operations(page, plan)
 
         assert "## Sub" in new_content
         assert "Sub text." in new_content
@@ -157,7 +157,7 @@ class TestUpdateFrontmatterField:
             slug="test/fm",
             operations=[UpdateFrontmatterField(field_name="confidence", field_value=0.95)],
         )
-        meta, content = apply_operations(page, plan)
+        meta, _content = apply_operations(page, plan)
 
         assert meta["confidence"] == 0.95
 
@@ -168,7 +168,7 @@ class TestUpdateFrontmatterField:
             slug="test/fm2",
             operations=[UpdateFrontmatterField(field_name="synopsis", field_value="A test page.")],
         )
-        meta, content = apply_operations(page, plan)
+        meta, _content = apply_operations(page, plan)
 
         assert meta["synopsis"] == "A test page."
 
@@ -179,7 +179,7 @@ class TestUpdateFrontmatterField:
             slug="test/fm3",
             operations=[UpdateFrontmatterField(field_name="tags", field_value=None)],
         )
-        meta, content = apply_operations(page, plan)
+        meta, _content = apply_operations(page, plan)
 
         assert "tags" not in meta
 
@@ -198,7 +198,7 @@ class TestAddProvenanceMarker:
                 source_ref="raw/myapp/deploy.md",
             )],
         )
-        meta, new_content = apply_operations(page, plan)
+        _, new_content = apply_operations(page, plan)
 
         assert "^[raw/myapp/deploy.md]" in new_content
         assert "Redis is used for caching. ^[raw/myapp/deploy.md]" in new_content
@@ -214,7 +214,7 @@ class TestAddProvenanceMarker:
                 source_ref="raw/myapp/deploy.md",
             )],
         )
-        meta, new_content = apply_operations(page, plan)
+        _, new_content = apply_operations(page, plan)
 
         assert "^[raw/myapp/deploy.md]" in new_content
 
@@ -322,7 +322,7 @@ class TestValidation:
 
 class TestWikiFSSafeUpdate:
     def test_apply_safe_update(self, fs):
-        page = _make_page(fs, "test/safe", "# Intro\n\nOld text here.")
+        _make_page(fs, "test/safe", "# Intro\n\nOld text here.")
 
         plan = PageWritePlan(
             slug="test/safe",
@@ -336,11 +336,11 @@ class TestWikiFSSafeUpdate:
 
     def test_apply_safe_update_page_not_found(self, fs):
         plan = PageWritePlan(slug="nonexistent/page")
-        with pytest.raises(Exception):
+        with pytest.raises(WikiFSError):
             fs.apply_safe_update("nonexistent/page", plan)
 
     def test_generate_update_diff(self, fs):
-        page = _make_page(fs, "test/gendiff", "# Intro\n\nText.")
+        _make_page(fs, "test/gendiff", "# Intro\n\nText.")
 
         plan = PageWritePlan(
             slug="test/gendiff",

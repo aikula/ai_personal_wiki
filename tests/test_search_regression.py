@@ -318,6 +318,6 @@ class TestSearchBenchmark:
         results2 = search.search("redis")
 
         assert len(results1) == len(results2)
-        for r1, r2 in zip(results1, results2):
+        for r1, r2 in zip(results1, results2, strict=True):
             assert r1["slug"] == r2["slug"]
             assert r1["score"] == r2["score"]
