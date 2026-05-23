@@ -35,10 +35,10 @@ LANGUAGE=ru
 APP_PORT=8000
 
 APP_MODE=multi_user
-WIKI_DATA_PATH=./wiki-data
+WIKI_DATA_PATH=/wiki-data
 
-CONTROL_DB_URL=sqlite:///./wiki-data/control.db
-WIKI_WORKSPACES_ROOT=./wiki-data/workspaces
+CONTROL_DB_URL=sqlite:////wiki-data/control.db
+WIKI_WORKSPACES_ROOT=/wiki-data/workspaces
 MULTI_USER_ADMIN_EMAILS=admin@example.com
 MULTI_USER_ADMIN_EMAIL=admin@example.com
 REGISTRATION_ENABLED=true
@@ -66,8 +66,10 @@ WIKI_AUTH_PASSWORD=
 - `MULTI_USER_ADMIN_EMAIL` - удобный одиночный alias для одного админа;
 - admin role выдается автоматически при регистрации аккаунта на email из
   `MULTI_USER_ADMIN_EMAILS` или `MULTI_USER_ADMIN_EMAIL`;
-- `CONTROL_DB_URL` в alpha может оставаться SQLite;
-- `WIKI_WORKSPACES_ROOT` должен лежать в persistent storage;
+- `CONTROL_DB_URL` в alpha может оставаться SQLite, но путь должен быть
+  абсолютным и указывать на `/wiki-data/...`;
+- `WIKI_WORKSPACES_ROOT` должен лежать в persistent storage, а не в
+  временном каталоге контейнера;
 - `APP_PORT` задает внешний порт `docker compose`;
 - `LLM_API_KEY=replace-me` надо заменить на реальный ключ до запуска.
 
@@ -232,7 +234,11 @@ Isolation:
 
 - volume `./wiki-data:/wiki-data` действительно примонтирован;
 - `CONTROL_DB_URL` указывает на `/wiki-data/...`, а не на временный путь внутри
-  контейнера.
+  контейнера;
+- `WIKI_WORKSPACES_ROOT` также указывает на `/wiki-data/...`.
+- контейнер должен иметь права на запись в bind mount; в alpha-режиме
+  `wiki-engine` запускается как root, чтобы SQLite и workspace-файлы не
+  оказывались в read-only слое.
 
 ## 11. Перед выдачей доступа ранним пользователям
 
@@ -245,3 +251,11 @@ Isolation:
 - `.env` заполнен реальными LLM credentials;
 - known limitations документированы;
 - тестировщикам выдан staging URL и краткий test plan.
+
+## 12. Зафиксированные решения и долг
+
+Краткий список принятых архитектурных решений и сознательно отложенного долга
+лежит в [mvp_decisions_and_debt_ru.md](./mvp_decisions_and_debt_ru.md).
+
+Если какой-то пункт из этого документа меняется, нужно синхронно обновить и
+runbook, и roadmap, чтобы MVP-контур оставался однозначным.
