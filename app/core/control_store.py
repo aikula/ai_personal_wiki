@@ -473,12 +473,18 @@ class SQLiteControlStore:
     def _reset_due_daily_bucket(self, conn: sqlite3.Connection, user_id: str) -> None:
         now = datetime.now(timezone.utc)
         row = conn.execute(
-            "SELECT id, reset_at FROM credit_buckets WHERE user_id = ? AND bucket_type = 'daily'",
+            "SELECT id, reset_at, tokens_used FROM credit_buckets WHERE user_id = ? AND bucket_type = 'daily'",
             (user_id,),
         ).fetchone()
         if row is None or not row["reset_at"]:
             return
         if _parse_timestamp(row["reset_at"]) > now:
+            return
+        if row["tokens_used"] == 0:
+            conn.execute(
+                "UPDATE credit_buckets SET reset_at = ?, updated_at = ? WHERE id = ?",
+                (_next_reset_at(), now.isoformat(), row["id"]),
+            )
             return
         conn.execute(
             "UPDATE credit_buckets SET tokens_used = 0, reset_at = ?, updated_at = ? WHERE id = ?",

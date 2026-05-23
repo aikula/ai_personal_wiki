@@ -247,16 +247,14 @@ def test_record_usage(sqlite_store: SQLiteControlStore):
     assert recent[0]["total_tokens"] == 300
 
 
-def test_lazy_daily_reset(sqlite_store: SQLiteControlStore):
+def test_lazy_daily_reset_restores_used_tokens(sqlite_store: SQLiteControlStore):
     user = sqlite_store.create_user("reset@example.com", "hash")
     sqlite_store.create_credit_buckets(user.id, daily_limit=1000, welcome_limit=5000)
 
-    # Consume some tokens
     sqlite_store.consume_tokens(user.id, 500)
     state = sqlite_store.get_credit_state(user.id)
     assert state.daily_used == 500
 
-    # Manually set reset_at to the past to simulate a past-due reset
     conn = sqlite_store._connect()
     conn.execute(
         "UPDATE credit_buckets SET reset_at = '2000-01-01T00:00:00' WHERE user_id = ? AND bucket_type = 'daily'",
@@ -265,7 +263,31 @@ def test_lazy_daily_reset(sqlite_store: SQLiteControlStore):
     conn.commit()
     conn.close()
 
-    # Next get should trigger lazy reset
+    state = sqlite_store.get_credit_state(user.id)
+    assert state.daily_used == 0
+    assert state.daily_remaining == 1000
+    assert state.daily_reset_at is not None
+    assert state.daily_reset_at != "2000-01-01T00:00:00"
+
+
+def test_lazy_daily_reset_no_usage_keeps_bucket(sqlite_store: SQLiteControlStore):
+    """If user didn't use any tokens at reset time, bucket is left as-is."""
+    user = sqlite_store.create_user("noop@example.com", "hash")
+    sqlite_store.create_credit_buckets(user.id, daily_limit=1000, welcome_limit=5000)
+
+    state = sqlite_store.get_credit_state(user.id)
+    assert state.daily_used == 0
+    assert state.daily_remaining == 1000
+
+    # Manually set reset_at to the past, tokens_used stays 0
+    conn = sqlite_store._connect()
+    conn.execute(
+        "UPDATE credit_buckets SET reset_at = '2000-01-01T00:00:00' WHERE user_id = ? AND bucket_type = 'daily'",
+        (user.id,),
+    )
+    conn.commit()
+    conn.close()
+
     state = sqlite_store.get_credit_state(user.id)
     assert state.daily_used == 0
     assert state.daily_remaining == 1000
