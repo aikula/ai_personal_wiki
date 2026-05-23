@@ -20,6 +20,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Protocol
 
+import bcrypt
+
 logger = logging.getLogger("wiki.control")
 
 
@@ -78,6 +80,8 @@ class ControlStore(Protocol):
     def get_user_by_email(self, email: str) -> UserRecord | None: ...
     def create_user(self, email: str, password_hash: str) -> UserRecord: ...
     def verify_password(self, email: str, password_hash: str) -> UserRecord | None: ...
+    def password_matches(self, user_id: str, password: str) -> bool: ...
+    def set_user_admin(self, user_id: str, is_admin: bool) -> None: ...
     def create_session(self, user_id: str) -> str: ...
     def get_user_by_session_token(self, token: str) -> UserRecord | None: ...
     def revoke_session(self, token: str) -> None: ...
@@ -85,6 +89,7 @@ class ControlStore(Protocol):
     def create_default_workspace(self, user_id: str, name: str, slug: str, root_path: str) -> WorkspaceRecord: ...
     def get_credit_state(self, user_id: str) -> CreditState: ...
     def consume_tokens(self, user_id: str, amount: int) -> CreditState: ...
+    def refund_tokens(self, user_id: str, amount: int) -> CreditState: ...
     def record_usage(self, event: UsageEvent) -> None: ...
     def get_recent_usage(self, user_id: str, limit: int = 20) -> list[dict]: ...
 
@@ -102,6 +107,12 @@ class NoopControlStore:
 
     def verify_password(self, email: str, password_hash: str) -> UserRecord | None:
         return None
+
+    def password_matches(self, user_id: str, password: str) -> bool:
+        return False
+
+    def set_user_admin(self, user_id: str, is_admin: bool) -> None:
+        raise RuntimeError("Admin updates not available in personal mode")
 
     def create_session(self, user_id: str) -> str:
         raise RuntimeError("Sessions not available in personal mode")
@@ -127,6 +138,9 @@ class NoopControlStore:
         )
 
     def consume_tokens(self, user_id: str, amount: int) -> CreditState:
+        return self.get_credit_state(user_id)
+
+    def refund_tokens(self, user_id: str, amount: int) -> CreditState:
         return self.get_credit_state(user_id)
 
     def record_usage(self, event: UsageEvent) -> None:
@@ -165,6 +179,18 @@ class SQLiteControlStore:
         finally:
             conn.close()
 
+    def set_user_admin(self, user_id: str, is_admin: bool) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        conn = self._connect()
+        try:
+            conn.execute(
+                "UPDATE users SET is_admin = ?, updated_at = ? WHERE id = ?",
+                (1 if is_admin else 0, now, user_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
     def create_user(self, email: str, password_hash: str) -> UserRecord:
         now = datetime.now(timezone.utc).isoformat()
         user_id = secrets.token_hex(16)
@@ -184,19 +210,26 @@ class SQLiteControlStore:
             conn.close()
 
     def verify_password(self, email: str, password_hash: str) -> UserRecord | None:
+        user = self.get_user_by_email(email)
+        if user is None or not self.password_matches(user.id, password_hash):
+            return None
+        self._touch_last_login(user.id)
+        return user
+
+    def password_matches(self, user_id: str, password: str) -> bool:
         conn = self._connect()
         try:
             row = conn.execute(
-                "SELECT * FROM users WHERE email = ? AND password_hash = ? AND is_active = 1",
-                (email.lower(), password_hash),
+                "SELECT password_hash FROM users WHERE id = ? AND is_active = 1",
+                (user_id,),
             ).fetchone()
             if row is None:
-                return None
-            # Update last_login_at
-            now = datetime.now(timezone.utc).isoformat()
-            conn.execute("UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?", (now, now, row["id"]))
-            conn.commit()
-            return _row_to_user(row)
+                return False
+            try:
+                return bcrypt.checkpw(password.encode("utf-8"), row["password_hash"].encode("utf-8"))
+            except ValueError:
+                logger.warning("Invalid password hash format for user_id=%s", user_id)
+                return False
         finally:
             conn.close()
 
@@ -223,12 +256,15 @@ class SQLiteControlStore:
         conn = self._connect()
         try:
             row = conn.execute(
-                "SELECT u.* FROM users u "
+                "SELECT u.*, s.expires_at FROM users u "
                 "JOIN sessions s ON s.user_id = u.id "
-                "WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > datetime('now')",
+                "WHERE s.token_hash = ? AND s.revoked_at IS NULL",
                 (token_hash,),
             ).fetchone()
             if row is None:
+                return None
+            expires_at = row["expires_at"]
+            if expires_at and _parse_timestamp(expires_at) <= datetime.now(timezone.utc):
                 return None
             return _row_to_user(row)
         finally:
@@ -283,62 +319,27 @@ class SQLiteControlStore:
     def get_credit_state(self, user_id: str) -> CreditState:
         conn = self._connect()
         try:
-            now = datetime.now(timezone.utc).isoformat()
-            rows = conn.execute(
-                "SELECT * FROM credit_buckets WHERE user_id = ? AND bucket_type IN ('daily', 'welcome')",
-                (user_id,),
-            ).fetchall()
-
-            daily_limit = 0
-            daily_used = 0
-            daily_reset_at = None
-            welcome_limit = 0
-            welcome_used = 0
-
-            for row in rows:
-                if row["bucket_type"] == "daily":
-                    # Check if reset is needed
-                    reset_at = row["reset_at"]
-                    if reset_at and now > reset_at:
-                        # Lazy reset
-                        conn.execute(
-                            "UPDATE credit_buckets SET tokens_used = 0, reset_at = ?, updated_at = ? WHERE id = ?",
-                            (_next_reset_at(), now, row["id"]),
-                        )
-                        conn.commit()
-                        daily_used = 0
-                    else:
-                        daily_used = row["tokens_used"]
-                    daily_limit = row["token_limit"]
-                    daily_reset_at = row["reset_at"]
-                elif row["bucket_type"] == "welcome":
-                    welcome_limit = row["token_limit"]
-                    welcome_used = row["tokens_used"]
-
-            return CreditState(
-                daily_limit=daily_limit,
-                daily_used=daily_used,
-                daily_remaining=max(0, daily_limit - daily_used),
-                daily_reset_at=daily_reset_at,
-                welcome_limit=welcome_limit,
-                welcome_used=welcome_used,
-                welcome_remaining=max(0, welcome_limit - welcome_used),
-            )
+            self._reset_due_daily_bucket(conn, user_id)
+            rows = self._fetch_credit_bucket_rows(conn, user_id)
+            return _credit_state_from_rows(rows)
         finally:
             conn.close()
 
     def consume_tokens(self, user_id: str, amount: int) -> CreditState:
-        now = datetime.now(timezone.utc).isoformat()
         conn = self._connect()
         try:
-            # Get credit state first (handles lazy reset)
-            state = self.get_credit_state(user_id)
+            conn.execute("BEGIN IMMEDIATE")
+            self._reset_due_daily_bucket(conn, user_id)
+            rows = self._fetch_credit_bucket_rows(conn, user_id)
+            state = _credit_state_from_rows(rows)
             total_remaining = state.daily_remaining + state.welcome_remaining
             if total_remaining < amount:
+                conn.rollback()
                 raise InsufficientCreditsError(
                     required=amount, available=total_remaining,
                 )
 
+            now = datetime.now(timezone.utc).isoformat()
             # Spend daily first, then welcome
             daily_spend = min(amount, state.daily_remaining)
             welcome_spend = amount - daily_spend
@@ -356,7 +357,41 @@ class SQLiteControlStore:
                     (welcome_spend, now, user_id),
                 )
             conn.commit()
+            rows = self._fetch_credit_bucket_rows(conn, user_id)
+            return _credit_state_from_rows(rows)
+        finally:
+            conn.close()
+
+    def refund_tokens(self, user_id: str, amount: int) -> CreditState:
+        if amount <= 0:
             return self.get_credit_state(user_id)
+        conn = self._connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            self._reset_due_daily_bucket(conn, user_id)
+            rows = self._fetch_credit_bucket_rows(conn, user_id)
+            state = _credit_state_from_rows(rows)
+            now = datetime.now(timezone.utc).isoformat()
+
+            welcome_refund = min(amount, state.welcome_used)
+            daily_refund = min(amount - welcome_refund, state.daily_used)
+
+            if welcome_refund > 0:
+                conn.execute(
+                    "UPDATE credit_buckets SET tokens_used = tokens_used - ?, updated_at = ? "
+                    "WHERE user_id = ? AND bucket_type = 'welcome'",
+                    (welcome_refund, now, user_id),
+                )
+            if daily_refund > 0:
+                conn.execute(
+                    "UPDATE credit_buckets SET tokens_used = tokens_used - ?, updated_at = ? "
+                    "WHERE user_id = ? AND bucket_type = 'daily'",
+                    (daily_refund, now, user_id),
+                )
+
+            conn.commit()
+            rows = self._fetch_credit_bucket_rows(conn, user_id)
+            return _credit_state_from_rows(rows)
         finally:
             conn.close()
 
@@ -404,18 +439,51 @@ class SQLiteControlStore:
         conn = self._connect()
         try:
             conn.execute(
-                "INSERT INTO credit_buckets (id, user_id, bucket_type, token_limit, tokens_used, reset_at, expires_at, created_at, updated_at) "
+                "INSERT OR IGNORE INTO credit_buckets (id, user_id, bucket_type, token_limit, tokens_used, reset_at, expires_at, created_at, updated_at) "
                 "VALUES (?, ?, 'daily', ?, 0, ?, NULL, ?, ?)",
                 (secrets.token_hex(16), user_id, daily_limit, _next_reset_at(), now, now),
             )
             conn.execute(
-                "INSERT INTO credit_buckets (id, user_id, bucket_type, token_limit, tokens_used, reset_at, expires_at, created_at, updated_at) "
+                "INSERT OR IGNORE INTO credit_buckets (id, user_id, bucket_type, token_limit, tokens_used, reset_at, expires_at, created_at, updated_at) "
                 "VALUES (?, ?, 'welcome', ?, 0, NULL, NULL, ?, ?)",
                 (secrets.token_hex(16), user_id, welcome_limit, now, now),
             )
             conn.commit()
         finally:
             conn.close()
+
+    def _touch_last_login(self, user_id: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        conn = self._connect()
+        try:
+            conn.execute(
+                "UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?",
+                (now, now, user_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _fetch_credit_bucket_rows(self, conn: sqlite3.Connection, user_id: str) -> list[sqlite3.Row]:
+        return conn.execute(
+            "SELECT * FROM credit_buckets WHERE user_id = ? AND bucket_type IN ('daily', 'welcome')",
+            (user_id,),
+        ).fetchall()
+
+    def _reset_due_daily_bucket(self, conn: sqlite3.Connection, user_id: str) -> None:
+        now = datetime.now(timezone.utc)
+        row = conn.execute(
+            "SELECT id, reset_at FROM credit_buckets WHERE user_id = ? AND bucket_type = 'daily'",
+            (user_id,),
+        ).fetchone()
+        if row is None or not row["reset_at"]:
+            return
+        if _parse_timestamp(row["reset_at"]) > now:
+            return
+        conn.execute(
+            "UPDATE credit_buckets SET tokens_used = 0, reset_at = ?, updated_at = ? WHERE id = ?",
+            (_next_reset_at(), now.isoformat(), row["id"]),
+        )
 
 
 class InsufficientCreditsError(Exception):
@@ -449,6 +517,41 @@ def _row_to_workspace(row: sqlite3.Row) -> WorkspaceRecord:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
+
+
+def _credit_state_from_rows(rows: list[sqlite3.Row]) -> CreditState:
+    daily_limit = 0
+    daily_used = 0
+    daily_reset_at = None
+    welcome_limit = 0
+    welcome_used = 0
+
+    for row in rows:
+        if row["bucket_type"] == "daily":
+            daily_limit = row["token_limit"]
+            daily_used = row["tokens_used"]
+            daily_reset_at = row["reset_at"]
+        elif row["bucket_type"] == "welcome":
+            welcome_limit = row["token_limit"]
+            welcome_used = row["tokens_used"]
+
+    return CreditState(
+        daily_limit=daily_limit,
+        daily_used=daily_used,
+        daily_remaining=max(0, daily_limit - daily_used),
+        daily_reset_at=daily_reset_at,
+        welcome_limit=welcome_limit,
+        welcome_used=welcome_used,
+        welcome_remaining=max(0, welcome_limit - welcome_used),
+    )
+
+
+def _parse_timestamp(value: str) -> datetime:
+    normalized = value.replace("Z", "+00:00")
+    parsed = datetime.fromisoformat(normalized)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _next_reset_at() -> str:

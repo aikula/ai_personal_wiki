@@ -7,17 +7,15 @@ GET /api/usage/me
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.api.dependencies import get_settings
+from app.api.dependencies import build_control_store, get_settings
 from app.api.models import UsageResponse
 from app.config import Settings
-from app.core.control_store import ControlStore, NoopControlStore, SQLiteControlStore
-from app.core.migrations.runner import run_migrations
+from app.core.control_store import ControlStore
 
 logger = logging.getLogger("wiki.api.usage")
 router = APIRouter(prefix="/api/usage", tags=["usage"])
@@ -25,15 +23,7 @@ security = HTTPBearer(auto_error=False)
 
 
 def _get_control_store(settings: Settings) -> ControlStore:
-    if settings.app_mode == "multi_user":
-        db_url = settings.control.db_url
-        if db_url.startswith("sqlite:///"):
-            db_path = Path(db_url[len("sqlite:///"):])
-        else:
-            db_path = Path(db_url)
-        run_migrations(db_path)
-        return SQLiteControlStore(db_path)
-    return NoopControlStore()
+    return build_control_store(settings)
 
 
 @router.get("/me")

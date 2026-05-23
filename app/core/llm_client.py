@@ -15,12 +15,33 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Generator
+from typing import Protocol
 
 from openai import OpenAI
 
 from app.config import Settings
 
 logger = logging.getLogger("wiki.llm")
+
+
+class LLMGateway(Protocol):
+    model: str
+
+    def call(
+        self,
+        system: str,
+        prompt: str,
+        temperature: float | None = None,
+        json_mode: bool = False,
+        max_tokens: int | None = None,
+    ) -> str: ...
+
+    def stream(
+        self,
+        system: str,
+        messages: list[dict],
+        temperature: float | None = None,
+    ) -> Generator[str, None, None]: ...
 
 
 class LLMClient:

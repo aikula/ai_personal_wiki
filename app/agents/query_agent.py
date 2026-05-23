@@ -45,7 +45,7 @@ from app.agents.query_types import (
 )
 from app.config import Settings
 from app.core.interpreter import CodeInterpreter
-from app.core.llm_client import LLMClient
+from app.core.llm_client import LLMGateway
 from app.core.token_budget import ContextBudget
 from app.core.utils import extract_wikilinks, now_iso, parse_json_block
 from app.core.wiki_fs import WikiFS, WikiPage
@@ -69,7 +69,7 @@ class QueryAgent:
     def __init__(
         self,
         fs: WikiFS,
-        llm: LLMClient,
+        llm: LLMGateway,
         interpreter: CodeInterpreter,
         settings: Settings,
     ):

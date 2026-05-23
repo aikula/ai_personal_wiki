@@ -3,17 +3,16 @@
 import sqlite3
 from pathlib import Path
 
+import bcrypt
 import pytest
 
 from app.core.control_store import (
-    CreditState,
     InsufficientCreditsError,
     NoopControlStore,
     SQLiteControlStore,
     UsageEvent,
 )
 from app.core.migrations.runner import run_migrations
-
 
 # ── Migration tests ───────────────────────────────────────────────
 
@@ -46,7 +45,7 @@ def test_migration_idempotent(empty_db: Path):
     conn = sqlite3.connect(str(empty_db))
     count = conn.execute("SELECT COUNT(*) FROM _migrations").fetchone()[0]
     conn.close()
-    assert count >= 1  # at least one migration applied
+    assert count >= 2  # core schema + follow-up indexes
 
 
 def test_migration_enables_wal(empty_db: Path):
@@ -124,26 +123,30 @@ def test_duplicate_email_raises(sqlite_store: SQLiteControlStore):
 
 
 def test_verify_password_success(sqlite_store: SQLiteControlStore):
-    sqlite_store.create_user("verify@example.com", "correct_hash")
-    user = sqlite_store.verify_password("verify@example.com", "correct_hash")
+    password = "correct-password"
+    password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    sqlite_store.create_user("verify@example.com", password_hash)
+    user = sqlite_store.verify_password("verify@example.com", password)
     assert user is not None
     assert user.email == "verify@example.com"
 
 
 def test_verify_password_wrong_hash(sqlite_store: SQLiteControlStore):
-    sqlite_store.create_user("wrong@example.com", "correct_hash")
-    user = sqlite_store.verify_password("wrong@example.com", "wrong_hash")
+    password_hash = bcrypt.hashpw(b"correct-password", bcrypt.gensalt()).decode("utf-8")
+    sqlite_store.create_user("wrong@example.com", password_hash)
+    user = sqlite_store.verify_password("wrong@example.com", "wrong-password")
     assert user is None
 
 
 def test_verify_password_inactive_user(sqlite_store: SQLiteControlStore):
-    user = sqlite_store.create_user("inactive@example.com", "hash")
+    password_hash = bcrypt.hashpw(b"correct-password", bcrypt.gensalt()).decode("utf-8")
+    user = sqlite_store.create_user("inactive@example.com", password_hash)
     conn = sqlite_store._connect()
     conn.execute("UPDATE users SET is_active = 0 WHERE id = ?", (user.id,))
     conn.commit()
     conn.close()
 
-    result = sqlite_store.verify_password("inactive@example.com", "hash")
+    result = sqlite_store.verify_password("inactive@example.com", "correct-password")
     assert result is None
 
 
@@ -266,3 +269,36 @@ def test_lazy_daily_reset(sqlite_store: SQLiteControlStore):
     state = sqlite_store.get_credit_state(user.id)
     assert state.daily_used == 0
     assert state.daily_remaining == 1000
+    assert state.daily_reset_at is not None
+    assert state.daily_reset_at != "2000-01-01T00:00:00"
+
+
+def test_refund_tokens_restores_balance(sqlite_store: SQLiteControlStore):
+    user = sqlite_store.create_user("refund@example.com", "hash")
+    sqlite_store.create_credit_buckets(user.id, daily_limit=100, welcome_limit=50)
+
+    sqlite_store.consume_tokens(user.id, 120)
+    state = sqlite_store.refund_tokens(user.id, 20)
+
+    assert state.daily_used == 100
+    assert state.welcome_used == 0
+    assert state.daily_remaining == 0
+    assert state.welcome_remaining == 50
+
+
+def test_create_credit_buckets_idempotent(sqlite_store: SQLiteControlStore):
+    user = sqlite_store.create_user("bucket@example.com", "hash")
+
+    sqlite_store.create_credit_buckets(user.id, daily_limit=100, welcome_limit=50)
+    sqlite_store.create_credit_buckets(user.id, daily_limit=100, welcome_limit=50)
+
+    conn = sqlite_store._connect()
+    try:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM credit_buckets WHERE user_id = ?",
+            (user.id,),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    assert count == 2

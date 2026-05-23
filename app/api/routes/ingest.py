@@ -51,6 +51,7 @@ async def _read_form_file(request: Request):
     project = str(form.get("project") or "_general")
     source_file = form.get("file")
     if source_file is None or not getattr(source_file, "filename", None):
+        logger.warning("Ingest rejected: file is missing project=%s", project)
         raise HTTPException(400, "Файл не передан")
     return project, source_file
 
@@ -61,9 +62,20 @@ async def _save_and_ingest(project: str, source_file, agent: IngestAgent, fs: Wi
         validate_project_name(project)
         validate_raw_filename(filename)
     except ValueError as exc:
+        logger.warning(
+            "Ingest validation rejected project=%s filename=%s reason=%s",
+            project,
+            filename,
+            exc,
+        )
         raise HTTPException(400, str(exc)) from exc
 
     if not any(filename.lower().endswith(ext) for ext in RAW_ALLOWED_EXTENSIONS):
+        logger.warning(
+            "Ingest rejected unsupported extension project=%s filename=%s",
+            project,
+            filename,
+        )
         raise HTTPException(
             400,
             "Неподдерживаемый тип файла. Допустимые расширения: " + _allowed_ext_text(),

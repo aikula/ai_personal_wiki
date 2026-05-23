@@ -36,7 +36,7 @@ from app.core.large_source_ingest import (
     parse_outline,
 )
 from app.core.linter import WikiLinter
-from app.core.llm_client import LLMClient
+from app.core.llm_client import LLMGateway
 from app.core.raw_sources import (
     RawSourceError,
     list_raw_source_files,
@@ -65,7 +65,7 @@ class IngestAgent:
     def __init__(
         self,
         fs: WikiFS,
-        llm: LLMClient,
+        llm: LLMGateway,
         interpreter: CodeInterpreter,
         settings: Settings,
     ):

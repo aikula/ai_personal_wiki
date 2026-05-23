@@ -110,6 +110,7 @@ class MultiUserSettings:
     default_daily_tokens: int = 30_000
     default_welcome_tokens: int = 200_000
     daily_reset_timezone: str = "UTC"
+    admin_emails: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -188,6 +189,19 @@ class Settings:
         daily_tz = os.environ.get("DAILY_RESET_TIMEZONE", "")
         if daily_tz:
             settings.multi_user.daily_reset_timezone = daily_tz
+        admin_emails = os.environ.get("MULTI_USER_ADMIN_EMAILS", "")
+        admin_email = os.environ.get("MULTI_USER_ADMIN_EMAIL", "")
+        collected: list[str] = []
+        if admin_emails:
+            collected.extend(
+                email.strip().lower()
+                for email in admin_emails.split(",")
+                if email.strip()
+            )
+        if admin_email:
+            collected.append(admin_email.strip().lower())
+        if collected:
+            settings.multi_user.admin_emails = sorted(set(collected))
 
         return settings
 
@@ -234,6 +248,10 @@ def _apply_dict(settings: Settings, data: dict) -> None:
     for key, value in data.items():
         if key == "language":
             settings.language = value
+        elif key == "app" and isinstance(value, dict):
+            mode = value.get("mode")
+            if mode in ("personal_local", "personal_server", "multi_user"):
+                settings.app_mode = mode
         elif key == "wiki_data_path":
             settings.wiki_data_path = value
         elif key == "app_mode":

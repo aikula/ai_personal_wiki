@@ -156,8 +156,6 @@ def validate_raw_filename(filename: str) -> None:
         raise ValueError("Имя файла не должно быть . или ..")
     if "/" in filename or "\\" in filename:
         raise ValueError("Имя файла не должно содержать разделители пути")
-    if ".." in filename:
-        raise ValueError("Имя файла не должно содержать '..'")
     if ":" in filename:
         raise ValueError("Имя файла не должно содержать ':'")
     

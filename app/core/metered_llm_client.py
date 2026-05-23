@@ -73,7 +73,7 @@ class MeteredLLMClient:
         estimated_input = max(1, int(input_chars / CHARS_PER_TOKEN))
         estimated_total = estimated_input + max_tokens if max_tokens else estimated_input * 2
 
-        # Check quota in multi-user mode
+        # Reserve quota in multi-user mode before provider call
         if self._is_multi_user:
             try:
                 self._store.consume_tokens(self._user_id, estimated_total)
@@ -92,13 +92,16 @@ class MeteredLLMClient:
                 temperature=temperature, json_mode=json_mode, max_tokens=max_tokens,
             )
         except Exception:
-            # Don't consume tokens if call fails — quota was reserved but not spent
-            # In a more sophisticated implementation we'd refund here
+            if self._is_multi_user:
+                self._store.refund_tokens(self._user_id, estimated_total)
             raise
 
         # Calculate actual usage
         output_tokens = max(1, int(len(response) / CHARS_PER_TOKEN))
         total_tokens = estimated_input + output_tokens
+
+        if self._is_multi_user:
+            self._reconcile_reserved_tokens(estimated_total, total_tokens)
 
         # Record usage
         if self._is_multi_user:
@@ -144,12 +147,17 @@ class MeteredLLMClient:
                 full_response.append(chunk)
                 yield chunk
         except Exception:
-            return
+            if self._is_multi_user:
+                self._store.refund_tokens(self._user_id, estimated_total)
+            raise
 
         # Record actual usage
         output_text = "".join(full_response)
         output_tokens = max(1, int(len(output_text) / CHARS_PER_TOKEN))
         total_tokens = estimated_input + output_tokens
+
+        if self._is_multi_user:
+            self._reconcile_reserved_tokens(estimated_total, total_tokens)
 
         if self._is_multi_user:
             try:
@@ -184,6 +192,13 @@ class MeteredLLMClient:
             is_estimated=True,
         )
         self._store.record_usage(event)
+
+    def _reconcile_reserved_tokens(self, reserved_tokens: int, actual_tokens: int) -> None:
+        delta = reserved_tokens - actual_tokens
+        if delta > 0:
+            self._store.refund_tokens(self._user_id, delta)
+        elif delta < 0:
+            self._store.consume_tokens(self._user_id, -delta)
 
 
 class QuotaExceededError(Exception):

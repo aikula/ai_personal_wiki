@@ -34,7 +34,7 @@ import yaml
 
 from app.config import Settings
 from app.core.linter import LintReport
-from app.core.llm_client import LLMClient
+from app.core.llm_client import LLMGateway
 from app.core.token_budget import ContextBudget
 from app.core.wiki_fs import WikiFS, WikiPage
 
@@ -208,7 +208,7 @@ class AuditAgent:
     def __init__(
         self,
         fs: WikiFS,
-        llm: LLMClient,
+        llm: LLMGateway,
         settings: Settings,
     ):
         self.fs = fs

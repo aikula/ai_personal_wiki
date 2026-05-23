@@ -9,15 +9,15 @@ GET  /api/auth/me
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from pathlib import Path
 from typing import Annotated
 
+import bcrypt
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.api.dependencies import get_settings, get_workspace_context
+from app.api.dependencies import build_control_store, get_settings, get_workspace_context
 from app.api.models import (
     AuthMeResponse,
     CreditOut,
@@ -31,40 +31,26 @@ from app.api.models import (
 )
 from app.config import Settings
 from app.core.context import WorkspaceContext
-from app.core.control_store import (
-    ControlStore,
-    NoopControlStore,
-    SQLiteControlStore,
-)
-from app.core.migrations.runner import run_migrations
+from app.core.control_store import ControlStore
 
 logger = logging.getLogger("wiki.api.auth")
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 def _hash_password(password: str) -> str:
-    """Hash password using SHA-256 with salt.
-
-    For MVP: SHA-256 with token salt. In production, use argon2 or bcrypt.
-    """
-    salt = "wiki-engine-mvp-salt"
-    return hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
+    """Hash password using bcrypt."""
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def _get_control_store(settings: Settings) -> ControlStore:
-    """Resolve ControlStore based on app mode. Runs migrations on first use."""
-    if settings.app_mode == "multi_user":
-        db_url = settings.control.db_url
-        if db_url.startswith("sqlite:///"):
-            db_path = Path(db_url[len("sqlite:///"):])
-        else:
-            db_path = Path(db_url)
-        run_migrations(db_path)
-        return SQLiteControlStore(db_path)
-    return NoopControlStore()
+    return build_control_store(settings)
 
 
 security = HTTPBearer(auto_error=False)
+
+
+def _is_configured_admin_email(settings: Settings, email: str) -> bool:
+    return email.lower() in {value.lower() for value in settings.multi_user.admin_emails}
 
 
 def get_current_user(
@@ -104,6 +90,14 @@ def get_current_user(
     }
 
 
+def get_current_admin(
+    user: Annotated[dict, Depends(get_current_user)],
+):
+    if not user["is_admin"]:
+        raise HTTPException(403, "Admin access required")
+    return user
+
+
 @router.post("/register")
 async def register(
     body: RegisterRequest,
@@ -125,6 +119,9 @@ async def register(
     # Create user
     password_hash = _hash_password(body.password)
     user = store.create_user(body.email, password_hash)
+    if _is_configured_admin_email(settings, user.email):
+        store.set_user_admin(user.id, True)
+        user = store.get_user_by_email(user.email) or user
 
     # Create default workspace
     slug = body.email.split("@")[0].lower().replace(".", "-")[:32]
@@ -173,11 +170,12 @@ async def login(
         raise HTTPException(400, "Login only available in multi-user mode")
 
     store = _get_control_store(settings)
-    password_hash = _hash_password(body.password)
-    user = store.verify_password(body.email, password_hash)
-
+    user = store.verify_password(body.email, body.password)
     if user is None:
         raise HTTPException(401, "Invalid email or password")
+    if _is_configured_admin_email(settings, user.email) and not user.is_admin:
+        store.set_user_admin(user.id, True)
+        user = store.get_user_by_email(user.email) or user
 
     token = store.create_session(user.id)
 

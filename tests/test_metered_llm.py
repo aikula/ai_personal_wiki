@@ -5,7 +5,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from app.api.dependencies import get_llm_client
 from app.config import Settings
+from app.core.context import WorkspaceContext
 from app.core.control_store import NoopControlStore, SQLiteControlStore
 from app.core.metered_llm_client import MeteredLLMClient, QuotaExceededError
 from app.core.migrations.runner import run_migrations
@@ -161,9 +163,47 @@ def test_multi_user_failed_call_no_consumption(multi_user_settings, tmp_path):
     with pytest.raises(RuntimeError):
         client.call(system="test", prompt="hello")
 
-    # Tokens should not have been consumed (quota was reserved but call failed)
-    # Note: In current implementation, tokens ARE consumed before the call.
-    # This is by design — we reserve quota before the call.
     state = store.get_credit_state(user.id)
-    # Some tokens were reserved for the estimated call
-    assert state.daily_used >= 0
+    assert state.daily_used == 0
+    assert state.welcome_used == 0
+
+
+def test_multi_user_refunds_estimation_surplus(multi_user_settings, tmp_path):
+    store = SQLiteControlStore(tmp_path / "control.db")
+    user = store.create_user("surplus@example.com", "hash")
+    ws = store.create_default_workspace(
+        user_id=user.id, name="WS", slug="ws", root_path="/tmp/ws",
+    )
+    store.create_credit_buckets(user.id, daily_limit=10_000, welcome_limit=50_000)
+
+    mock_llm = MagicMock()
+    mock_llm.model = "gpt-4o"
+    mock_llm.call.return_value = "ok"
+
+    client = MeteredLLMClient(
+        llm_client=mock_llm,
+        settings=multi_user_settings,
+        control_store=store,
+        user_id=user.id,
+        workspace_id=ws.id,
+    )
+    client.call(system="system " * 20, prompt="prompt " * 20)
+
+    state = store.get_credit_state(user.id)
+    assert state.daily_used > 0
+    assert state.daily_used < 100
+
+
+def test_dependency_returns_metered_client_in_multi_user(multi_user_settings):
+    multi_user_settings.llm.api_key = "test-key"
+    ctx = WorkspaceContext(
+        workspace_id="ws-1",
+        owner_user_id="user-1",
+        mode="multi_user",
+        wiki_data_path=Path(multi_user_settings.wiki_data_path),
+        quota_subject_id="user-1",
+    )
+
+    client = get_llm_client(multi_user_settings, ctx)
+
+    assert isinstance(client, MeteredLLMClient)

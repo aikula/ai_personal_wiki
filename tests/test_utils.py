@@ -1,6 +1,13 @@
 import pytest
 
-from app.core.utils import auto_link, extract_wikilinks, now_iso, parse_json_block, validate_slug
+from app.core.utils import (
+    auto_link,
+    extract_wikilinks,
+    now_iso,
+    parse_json_block,
+    validate_raw_filename,
+    validate_slug,
+)
 
 
 class TestParseJsonBlock:
@@ -102,6 +109,15 @@ class TestValidateSlug:
     def test_spaces_raises(self):
         with pytest.raises(ValueError, match="недопустимые символы"):
             validate_slug("my app/page")
+
+
+class TestValidateRawFilename:
+    def test_allows_double_dot_in_name_before_extension(self):
+        validate_raw_filename("Методический документ от 12 апреля 2026 г..pdf")
+
+    def test_rejects_path_separators(self):
+        with pytest.raises(ValueError, match="разделители пути"):
+            validate_raw_filename("../secret.pdf")
 
 
 class TestAutoLink:
