@@ -1,4 +1,3 @@
-
 from app.core.interpreter import CodeInterpreter
 
 
@@ -40,3 +39,54 @@ class TestCodeInterpreter:
         assert "stdout" in d
         assert "success" in d
         assert "result" in d
+
+    # ── Sandbox tests ───────────────────────────────────────────
+
+    def test_forbidden_import_os(self, tmp_path):
+        interp = CodeInterpreter(wiki_root=tmp_path)
+        result = interp.execute("import os")
+        assert result.success is False
+        assert "Forbidden import" in result.stderr
+
+    def test_forbidden_import_subprocess(self, tmp_path):
+        interp = CodeInterpreter(wiki_root=tmp_path)
+        result = interp.execute("import subprocess")
+        assert result.success is False
+        assert "Forbidden import" in result.stderr
+
+    def test_forbidden_call_eval(self, tmp_path):
+        interp = CodeInterpreter(wiki_root=tmp_path)
+        result = interp.execute('eval("1 + 1")')
+        assert result.success is False
+        assert "Forbidden call" in result.stderr
+
+    def test_forbidden_call_exec(self, tmp_path):
+        interp = CodeInterpreter(wiki_root=tmp_path)
+        result = interp.execute('exec("print(1)")')
+        assert result.success is False
+        assert "Forbidden call" in result.stderr
+
+    def test_forbidden_open_write(self, tmp_path):
+        interp = CodeInterpreter(wiki_root=tmp_path)
+        result = interp.execute('open("test.txt", "w")')
+        assert result.success is False
+        assert "Forbidden open() mode" in result.stderr
+
+    def test_forbidden_open_append(self, tmp_path):
+        interp = CodeInterpreter(wiki_root=tmp_path)
+        result = interp.execute('open("test.txt", mode="a")')
+        assert result.success is False
+        assert "Forbidden open() mode" in result.stderr
+
+    def test_allowed_import_json(self, tmp_path):
+        interp = CodeInterpreter(wiki_root=tmp_path)
+        result = interp.execute('import json; print(json.dumps({"ok": True}))')
+        assert result.success is True
+        assert result.result_json == {"ok": True}
+
+    def test_allowed_read_open_not_sandboxed(self, tmp_path):
+        # Read-mode open is allowed by sandbox; failure is runtime (file missing)
+        interp = CodeInterpreter(wiki_root=tmp_path)
+        result = interp.execute('open("nonexistent.txt")')
+        assert result.success is False
+        assert "Forbidden" not in result.stderr
