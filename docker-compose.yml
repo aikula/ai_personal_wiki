@@ -3,7 +3,6 @@ services:
     build: .
     container_name: wiki-engine
     restart: unless-stopped
-    user: "0:0"
     ports:
       - "${APP_PORT:-8000}:8000"
     volumes:
