@@ -256,6 +256,34 @@ ollama run qwen2.5:14b
 |---|---|---|
 | `GET` | `/api/audit/duplicates` | Поиск дубликатов и пересечений |
 | `GET` | `/api/audit/synthesis` | Список кандидатов на слияние |
+| `POST` | `/api/audit/synthesis` | Запустить синтез |
+| `POST` | `/api/audit/synthesis/{cid}/resolve` | Применить слияние |
+
+### Auth (мульти-пользователь)
+| Метод | Путь | Описание |
+|---|---|---|
+| `POST` | `/api/auth/register` | Регистрация нового пользователя |
+| `POST` | `/api/auth/login` | Вход (Email + пароль → Bearer token) |
+| `POST` | `/api/auth/logout` | Выход (отзыв токена) |
+| `GET` | `/api/auth/me` | Информация о текущем пользователе, workspace, квоты |
+
+### Admin (настройки сервера)
+| Метод | Путь | Описание |
+|---|---|---|
+| `GET` | `/api/admin/settings` | Текущие настройки LLM (api_key скрыт) |
+| `POST` | `/api/admin/settings` | Обновить настройки LLM |
+| `GET` | `/api/admin/settings/language` | Язык интерфейса |
+| `GET` | `/api/admin/settings/test` | Проверка подключения к LLM |
+
+### Usage (квоты, multi-user)
+| Метод | Путь | Описание |
+|---|---|---|
+| `GET` | `/api/usage/me` | Текущее использование токенов и квоты |
+
+### Health
+| Метод | Путь | Описание |
+|---|---|---|
+| `GET` | `/api/health` | Проверка работоспособности |
 
 ---
 
@@ -278,7 +306,10 @@ ollama run qwen2.5:14b
 wiki-engine/
 ├── app/
 │   ├── agents/              # LLM-агенты: ingest, query, audit
-│   ├── core/                # wiki_fs, linter, llm_client, utils
+│   ├── core/                # Бизнес-логика: wiki_fs, linter, interpreter,
+│   │   │                    # search_provider, safe_page_updates, large_source_ingest,
+│   │   │                    # token_budget, raw_sources, llm_client, metered_llm_client,
+│   │   │                    # context, control_store, utils, migrations/
 │   ├── api/                 # FastAPI: routes, models, dependencies
 │   └── ui/
 │       └── index.html       # SPA React (без сборки)
@@ -289,8 +320,37 @@ wiki-engine/
 │   ├── conflicts.md         # Очередь конфликтов
 │   └── skills.md            # Накопленные правила
 ├── config/settings.yaml     # Конфигурация
-└── tests/                   # 104 теста
+└── tests/                   # 298 тестов (15 файлов)
 ```
+
+---
+
+## Мульти-пользовательский режим (multi-user)
+
+Wiki Engine поддерживает три режима (`APP_MODE`):
+
+| Режим | Описание |
+|---|---|
+| `personal_local` | Локальная установка, без аутентификации, без квот |
+| `personal_server` | Серверная установка с Basic Auth (`WIKI_AUTH_ENABLED=true`) |
+| `multi_user` | Мульти-пользователь: регистрация, Bearer-токены, квоты токенов, изолированные workspace'ы |
+
+В multi-user режиме:
+- **Регистрация**: `POST /api/auth/register` — создаёт пользователя, workspace и кредитные корзины
+- **Квоты**: дневной лимит (`DEFAULT_DAILY_TOKENS`) + приветственный (`DEFAULT_WELCOME_TOKENS`), отслеживание через `MeteredLLMClient`
+- **Изоляция**: каждый пользователь получает отдельный workspace в `/wiki-data/workspaces/{user_id}/`
+- **SQLite control plane**: учётные записи, сессии, квоты — в `/wiki-data/control.db` (миграции в `app/core/migrations/`)
+- **Администраторы**: email'ы из `MULTI_USER_ADMIN_EMAILS` получают права администратора при создании
+
+## Безопасность песочницы кода
+
+Встроенный интерпретатор (`CodeInterpreter`) запускает код в изолированном процессе с тремя уровнями защиты:
+
+1. **AST-анализ**: перед запуском код проверяется — запрещены опасные импорты (`os`, `subprocess`, `socket`, `requests`…), вызовы (`eval`, `exec`, `__import__`, `open(mode='w')`…) и другие уязвимые операции
+2. **Лимиты ресурсов (POSIX)**: CPU ограничен таймаутом, память — 256 MB, размер создаваемых файлов — 1 MB
+3. **Таймаут**: 10 секунд hard limit на выполнение
+
+Docker-контейнер запускается от непривилегированного пользователя (`appuser`, uid 1000).
 
 ---
 
@@ -299,7 +359,8 @@ wiki-engine/
 ### Тесты
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v    # 104 теста: WikiFS, Linter, API, Interpreter, Utils
+pytest tests/ -v    # 298 тестов: WikiFS, Linter, API, Auth, Interpreter, Sandbox, SafePageUpdates,
+                    # LargeSourceIngest, TokenBudget, MeteredLLM, Utils, BrowserAuthFlow, Regressions
 ```
 
 ### Линтинг

@@ -253,6 +253,29 @@ ollama run qwen2.5:14b
 |---|---|---|
 | `GET` | `/api/audit/duplicates` | Find duplicates and overlaps |
 | `GET` | `/api/audit/synthesis` | List merge candidates |
+| `POST` | `/api/audit/synthesis` | Run synthesis |
+| `POST` | `/api/audit/synthesis/{cid}/resolve` | Apply merge |
+
+### Auth (multi-user)
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/auth/register` | Register new user |
+| `POST` | `/api/auth/login` | Login (Email + password → Bearer token) |
+| `POST` | `/api/auth/logout` | Logout (revoke token) |
+| `GET` | `/api/auth/me` | Current user info, workspace, quotas |
+
+### Admin (server settings)
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/admin/settings` | Current LLM settings (api_key masked) |
+| `POST` | `/api/admin/settings` | Update LLM settings |
+| `GET` | `/api/admin/settings/language` | Interface language |
+| `GET` | `/api/admin/settings/test` | Test LLM connectivity |
+
+### Usage (quotas, multi-user)
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/usage/me` | Current token usage and quota state |
 
 ### Health
 | Method | Path | Description |
@@ -280,19 +303,51 @@ ollama run qwen2.5:14b
 wiki-engine/
 ├── app/
 │   ├── agents/              # LLM agents: ingest, query, audit
-│   ├── core/                # wiki_fs, linter, llm_client, utils
+│   ├── core/                # Business logic: wiki_fs, linter, interpreter,
+│   │   │                    # search_provider, safe_page_updates, large_source_ingest,
+│   │   │                    # token_budget, raw_sources, llm_client, metered_llm_client,
+│   │   │                    # context, control_store, utils, migrations/
 │   ├── api/                 # FastAPI: routes, models, dependencies
 │   └── ui/
 │       └── index.html       # React SPA (no build step)
 ├── wiki-data/               # Data volume (Docker mount)
 │   ├── raw/                 # Source documents
-│   ├── wiki/                # Generated pages
+│   ├── wiki/                # Generated wiki pages
 │   ├── drafts/              # Pending drafts
 │   ├── conflicts.md         # Conflict queue
 │   └── skills.md            # Accumulated rules
 ├── config/settings.yaml     # Configuration
-└── tests/                   # 104 tests
+└── tests/                   # 298 tests (15 files)
 ```
+
+---
+
+## Multi-User Mode
+
+Wiki Engine supports three app modes (`APP_MODE`):
+
+| Mode | Description |
+|---|---|
+| `personal_local` | Local setup, no authentication, no quotas |
+| `personal_server` | Server with Basic Auth (`WIKI_AUTH_ENABLED=true`) |
+| `multi_user` | Multi-user: registration, Bearer tokens, token quotas, isolated workspaces |
+
+In multi-user mode:
+- **Registration**: `POST /api/auth/register` — creates user, workspace, and credit buckets
+- **Quotas**: daily limit (`DEFAULT_DAILY_TOKENS`) + welcome bonus (`DEFAULT_WELCOME_TOKENS`), tracked via `MeteredLLMClient`
+- **Isolation**: each user gets a separate workspace at `/wiki-data/workspaces/{user_id}/`
+- **SQLite control plane**: accounts, sessions, quotas in `/wiki-data/control.db` (migrations in `app/core/migrations/`)
+- **Admins**: emails from `MULTI_USER_ADMIN_EMAILS` get admin privileges on creation
+
+## Code Interpreter Sandbox
+
+The built-in interpreter (`CodeInterpreter`) runs code in an isolated subprocess with three protection layers:
+
+1. **AST analysis**: code is scanned before execution — dangerous imports (`os`, `subprocess`, `socket`, `requests`…), calls (`eval`, `exec`, `__import__`, `open(mode='w')`…) are blocked
+2. **Resource limits (POSIX)**: CPU limited to timeout, memory capped at 256 MB, max file size 1 MB
+3. **Timeout**: 10 second hard limit on execution
+
+The Docker container runs as a non-root user (`appuser`, uid 1000).
 
 ---
 
@@ -301,7 +356,8 @@ wiki-engine/
 ### Tests
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v    # 104 tests: WikiFS, Linter, API, Interpreter, Utils
+pytest tests/ -v    # 298 tests: WikiFS, Linter, API, Auth, Interpreter, Sandbox, SafePageUpdates,
+                    # LargeSourceIngest, TokenBudget, MeteredLLM, Utils, BrowserAuthFlow, Regressions
 ```
 
 ### Lint

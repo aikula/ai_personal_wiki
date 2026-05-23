@@ -14,15 +14,17 @@ LLM-powered personal wiki from markdown documents. **No databases. No vector emb
 
 ## Quick Start
 
-```powershell
+```bash
 pip install -e .
-Copy-Item .env.example .env
-python -m uvicorn app.api.main:app --reload --port 8000
+cp .env.example .env  # or: Copy-Item .env.example .env (PowerShell)
+uvicorn app.api.main:app --reload --port 8000
 ```
 
 Open http://localhost:8000 → 📂 Upload → Ask questions → Resolve conflicts → 🔍 Audit
 
 The app reads `.env` on startup and warns in logs if the LLM connection is not configured or cannot be reached.
+
+Docker: `docker compose up --build` (container runs as non-root `appuser`).
 
 ## Documentation
 
