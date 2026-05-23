@@ -4,7 +4,7 @@ WORKDIR /app
 
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential curl \
+    build-essential curl gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Python deps
@@ -20,7 +20,11 @@ RUN mkdir -p /wiki-data/raw/_general /wiki-data/wiki
 
 # Non-root user for security
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app /wiki-data
-USER appuser
+
+# Entrypoint: fixes volume ownership at runtime, then drops to appuser
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+ENTRYPOINT ["/docker-entrypoint.sh"]
 
 EXPOSE 8000
 
