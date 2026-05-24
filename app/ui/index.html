@@ -857,6 +857,8 @@ function AuditModal({ onClose }) {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [showAll, setShowAll] = useState(false);
+  const [lintRunning, setLintRunning] = useState(false);
+  const [lintResult, setLintResult] = useState(null);
 
   const runAudit = async () => {
     setRunning(true);
@@ -883,19 +885,44 @@ function AuditModal({ onClose }) {
     }
   };
 
+  const runLint = async () => {
+    setLintRunning(true);
+    try {
+      const r = await fetch('/api/audit/lint', {
+        headers: getAuthHeaders(),
+      });
+      if (!r.ok) throw new Error((await r.json()).detail || `Ошибка: ${r.status}`);
+      const data = await r.json();
+      setLintResult(data);
+      toast(data.is_clean ? '✓ Линтинг пройден' : `✗ ${data.errors} ошибок, ${data.warnings} предупреждений`, data.is_clean ? 'success' : 'warning');
+    } catch(e) {
+      toast(`Ошибка линтинга: ${e.message}`, 'error');
+    } finally {
+      setLintRunning(false);
+    }
+  };
+
   const candidates = result?.candidates || [];
   const displayed = showAll ? candidates : candidates.filter(c => c.score >= 0.9);
 
+  const lintIcon = (k) => {
+    if (k === 'broken_wikilink' || k === 'missing_frontmatter' || k === 'char_limit') return '🔴';
+    if (k === 'invalid_provenance' || k === 'orphan_page' || k === 'stale_page' || k === 'superseded_active') return '🟡';
+    return '🟢';
+  };
+
   return (
     <div className="modal-overlay" onClick={e => e.target===e.currentTarget && !running && onClose()}>
-      <div className="modal" style={{maxWidth:600}}>
-        <h2>🔍 Аудит Wiki</h2>
-        <p style={{fontSize:13, color:'var(--gray)', marginBottom:12}}>
-          Поиск дублирующихся или частично перекрывающихся страниц для возможного объединения.
-        </p>
+      <div className="modal" style={{maxWidth:640}}>
+        <h2 style={{marginBottom:4}}>🔍 Аудит Wiki</h2>
+
+        {/* ── Пересечения / дубликаты ── */}
+        <div style={{fontSize:13, color:'var(--gray)', marginBottom:10}}>
+          Поиск дублирующихся или частично перекрывающихся страниц.
+        </div>
 
         {result === null && !running && !error && (
-          <div style={{textAlign:'center', padding:'20px 0'}}>
+          <div style={{textAlign:'center', padding:'14px 0'}}>
             <button className="btn-primary" onClick={runAudit}>
               🔍 Запустить аудит
             </button>
@@ -903,66 +930,97 @@ function AuditModal({ onClose }) {
         )}
 
         {running && (
-          <div style={{textAlign:'center', padding:'20px 0', color:'var(--text-dim)'}}>
+          <div style={{textAlign:'center', padding:'14px 0', color:'var(--text-dim)'}}>
             ⏳ Проверка страниц…
           </div>
         )}
 
         {error && (
-          <div style={{padding:'12px', background:'rgba(220,38,38,.08)', borderRadius:6,
-                       color:'var(--red)', fontSize:13, marginBottom:12}}>
+          <div style={{padding:'10px', background:'rgba(220,38,38,.08)', borderRadius:6,
+                       color:'var(--red)', fontSize:13, marginBottom:10}}>
             {error}
           </div>
         )}
 
         {result !== null && result.total === 0 && (
-          <div style={{textAlign:'center', padding:'20px 0', color:'var(--green)', fontSize:14}}>
-            ✓ Дубликаты и пересечения не найдены. Wiki чиста.
+          <div style={{padding:'10px 0', color:'var(--green)', fontSize:13}}>
+            ✓ Дубликаты и пересечения не найдены.
           </div>
         )}
 
         {result !== null && result.total > 0 && (
           <>
-            <div style={{marginBottom:10, display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+            <div style={{marginBottom:8, display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
               <span style={{fontSize:13, fontWeight:600}}>
-                {showAll ? `Все кандидаты (${candidates.length})` : `Дубликаты (${displayed.length})`}
+                {showAll ? `Все (${candidates.length})` : `Дубликаты (${displayed.length})`}
               </span>
               {candidates.length > displayed.length && (
-                <button className="header-btn" onClick={() => setShowAll(!showAll)}
-                        style={{fontSize:12}}>
+                <button className="header-btn" onClick={() => setShowAll(!showAll)} style={{fontSize:12}}>
                   {showAll ? '← Только дубликаты' : `+ Пересечения (${candidates.length - displayed.length})`}
                 </button>
               )}
             </div>
-            <div style={{maxHeight:340, overflowY:'auto', marginBottom:12}}>
+            <div style={{maxHeight:200, overflowY:'auto', marginBottom:10}}>
               {displayed.map((c, i) => (
                 <div key={i} style={{
-                  padding:'10px', marginBottom:8, borderRadius:6,
+                  padding:'8px 10px', marginBottom:6, borderRadius:6,
                   border:'1px solid var(--border)', fontSize:13
                 }}>
-                  <div style={{display:'flex', justifyContent:'space-between', marginBottom:4}}>
+                  <div style={{display:'flex', justifyContent:'space-between', marginBottom:2}}>
                     <span style={{fontWeight:600}}>
                       {c.kind === 'duplicate' ? '🔁' : '🔗'} {c.reason}
                     </span>
-                    <span style={{fontSize:12, color:'var(--text-dim)'}}>
+                    <span style={{fontSize:11, color:'var(--text-dim)'}}>
                       {Math.round(c.score * 100)}%
                     </span>
                   </div>
                   <div style={{color:'var(--text-dim)', fontSize:12}}>
                     {c.pages.map((slug, j) => (
-                      <div key={j} style={{marginLeft:8}}>
-                        📄 <strong>{c.titles?.[slug] || slug}</strong>
-                        <span style={{color:'var(--text-dim)', marginLeft:6, fontSize:11}}>{slug}</span>
+                      <div key={j}>📄 <strong>{c.titles?.[slug] || slug}</strong>
+                        <span style={{color:'var(--text-dim)', marginLeft:4, fontSize:11}}>{slug}</span>
                       </div>
                     ))}
                   </div>
-                  <div style={{fontSize:11, color:'var(--text-dim)', marginTop:4}}>
-                    → {c.recommended_action}
-                  </div>
+                  <div style={{fontSize:11, color:'var(--text-dim)', marginTop:2}}>→ {c.recommended_action}</div>
                 </div>
               ))}
             </div>
           </>
+        )}
+
+        {/* ── Структурный линтинг ── */}
+        <hr style={{margin:'10px 0', border:'none', borderTop:'1px solid var(--border)'}} />
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
+          <span style={{fontSize:13, fontWeight:600}}>📋 Структурный линтинг</span>
+          <button className="header-btn" onClick={runLint} disabled={lintRunning} style={{fontSize:12}}>
+            {lintRunning ? '⏳' : '▶'} Проверить
+          </button>
+        </div>
+
+        {lintResult && (
+          <div style={{maxHeight:200, overflowY:'auto'}}>
+            {lintResult.is_clean ? (
+              <div style={{color:'var(--green)', fontSize:13, padding:'6px 0'}}>
+                ✓ Все {lintResult.total_pages} страниц в порядке
+              </div>
+            ) : (
+              <>
+                <div style={{fontSize:12, marginBottom:6, color:'var(--text-dim)'}}>
+                  {lintResult.errors} ошибок, {lintResult.warnings} предупреждений на {lintResult.total_pages} страницах
+                </div>
+                {Object.entries(lintResult.by_kind || {}).map(([kind, items]) => (
+                  <div key={kind} style={{marginBottom:4, fontSize:12}}>
+                    <div style={{fontWeight:600, marginBottom:2}}>{lintIcon(kind)} {kind}</div>
+                    {items.slice(0, 5).map((item, j) => (
+                      <div key={j} style={{paddingLeft:16, color:'var(--text-dim)', lineHeight:1.6}}>
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
         )}
 
         <div className="modal-actions">
