@@ -344,6 +344,7 @@ def normalize_wikilinks(content: str, existing_slugs: set[str] | None = None) ->
     # - single-segment (no /): common tech terms (pgvector, fastapi, etc.)
     # - first segment not a known project: made-up slugs (fastapi/backend, etc.)
     # - ends with - or _: truncated slugs (knowledge-, etc.)
+    # - fails validate_slug: invalid characters (spaces, Cyrillic as page ref, etc.)
     if existing_slugs is not None:
         known_projects = {s.split("/")[0] for s in existing_slugs if "/" in s}
         def _unlink_broken(m: re.Match) -> str:
@@ -351,6 +352,9 @@ def normalize_wikilinks(content: str, existing_slugs: set[str] | None = None) ->
             display = m.group(2)
             if slug in existing_slugs:
                 return m.group(0)
+            # Invalid slug chars (spaces, etc.) — LLM artifact, not a page ref
+            if not is_safe_slug(slug):
+                return display if display else slug
             if "/" not in slug:
                 return display if display else slug
             # Multi-segment: check first segment is a known project
