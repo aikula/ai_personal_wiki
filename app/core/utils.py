@@ -320,6 +320,26 @@ def normalize_wikilinks(content: str, existing_slugs: set[str] | None = None) ->
         lambda m: m.group(1),
         content,
     )
+    # Normalize provenance markers without raw/ prefix
+    # ^[_general/File.docx] → ^[raw/_general/File.docx]
+    content = re.sub(
+        r'\^\[(?!raw/)([^\]]+)\]',
+        lambda m: f'^[raw/{m.group(1)}]',
+        content,
+    )
+    # Remove wikilinks nested inside provenance markers (LLM artifact)
+    # ^[raw/_general/[[slug|text]]‑file.pdf] → ^[raw/_general/text‑file.pdf]
+    while re.search(r'\^\[raw/[^\]]*?\[\[', content):
+        content = re.sub(
+            r'(\^\[raw/[^\]]*?)\[\[[^\]]*?\|([^\]]+?)\]\]([^\]]*\])',
+            lambda m: m.group(1) + m.group(2) + m.group(3),
+            content,
+        )
+        content = re.sub(
+            r'(\^\[raw/[^\]]*?)\[\[([^\]]+?)\]\]([^\]]*\])',
+            lambda m: m.group(1) + m.group(2).split('/')[-1].replace('-', ' ').title() + m.group(3),
+            content,
+        )
     # Unlink non-existing wikilinks:
     # - single-segment (no /): common tech terms (pgvector, fastapi, etc.)
     # - first segment not a known project: made-up slugs (fastapi/backend, etc.)

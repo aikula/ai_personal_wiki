@@ -374,6 +374,16 @@ class WikiLinter:
                     severity="warning",
                     fix_hint=f"Удалите или исправьте provenance-маркер ^[raw/{ref}]",
                 ))
+        # Проверка provenance-маркеров без префикса raw/
+        bad_markers = re.findall(r"\^\[(?!raw/)([^\]]+)\]", page.content)
+        for ref in bad_markers:
+            issues.append(LintIssue(
+                slug=page.slug, line=0,
+                kind="invalid_provenance",
+                detail=f"Provenance-маркер без префикса raw/: ^[{ref}] (нужно ^[raw/{ref}])",
+                severity="warning",
+                fix_hint=f"Замените ^[{ref}] на ^[raw/{ref}]",
+            ))
         return issues
 
     # ── Global checks ────────────────────────────────────────────
