@@ -14,8 +14,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.api.dependencies import AuditAgent, WikiFS, get_audit_agent, get_wiki_fs
-from app.config import Settings, get_settings
+from app.api.dependencies import AuditAgent, WikiFS, get_audit_agent, get_settings, get_wiki_fs
+from app.config import Settings
 from app.core.linter import WikiLinter
 
 router = APIRouter(prefix="/api/audit", tags=["audit"])
