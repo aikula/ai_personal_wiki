@@ -332,8 +332,14 @@ class WikiFS:
         if not (self.wiki_dir / "index.md").exists():
             self._bootstrap_index()
         if not (self.wiki_dir / "log.md").exists():
+            self._bootstrap_log()
+
+    def _bootstrap_log(self) -> None:
+        if not (self.wiki_dir / "log.md").exists():
+            today = date.today().isoformat()
             (self.wiki_dir / "log.md").write_text(
-                "# Change Log\n\n", encoding="utf-8"
+                _LOG_FRONTMATTER.format(today=today),
+                encoding="utf-8",
             )
 
     def _bootstrap_index(self) -> None:
@@ -1646,7 +1652,8 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
 
         if len(updated) > self.limits.log_md_chars:
             self._rotate_log(current)
-            updated = "# Change Log\n\n" + new_entry + "\n"
+            today = date.today().isoformat()
+            updated = _LOG_FRONTMATTER.format(today=today) + new_entry + "\n"
 
         path.write_text(updated, encoding="utf-8")
 
@@ -2263,6 +2270,21 @@ _SKILLS_TEMPLATE = """# Skills
 ## Query Formatting Rules
 
 ## Ingest Patterns
+"""
+
+_LOG_FRONTMATTER = """---
+title: Change Log
+project: _general
+type: log
+tags: []
+confidence: 1.0
+sources: 0
+last_confirmed: {today}
+supersedes: null
+superseded_by: null
+created: {today}
+---
+
 """
 
 
