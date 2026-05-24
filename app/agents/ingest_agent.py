@@ -47,6 +47,7 @@ from app.core.utils import (
     auto_link,
     normalize_wikilinks,
     now_iso,
+    slugify,
     validate_wikilinks,
 )
 from app.core.wiki_fs import (
@@ -749,7 +750,7 @@ print(json.dumps(result))
                 )
                 break
 
-            slug = page_info["slug"]
+            slug = slugify(page_info["slug"])
             # Determine action based on existing page
             existing = self.fs.read_page(slug)
             action = "update" if existing else "create"

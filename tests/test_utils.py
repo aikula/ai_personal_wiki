@@ -102,9 +102,8 @@ class TestValidateSlug:
         with pytest.raises(ValueError, match="косую"):
             validate_slug("myapp\\page")
 
-    def test_uppercase_raises(self):
-        with pytest.raises(ValueError, match="недопустимые символы"):
-            validate_slug("MyApp/Page")
+    def test_uppercase_passes(self):
+        validate_slug("MyApp/Page")
 
     def test_spaces_raises(self):
         with pytest.raises(ValueError, match="недопустимые символы"):

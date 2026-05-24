@@ -17,6 +17,7 @@ from app.agents.ingest_types import (
     DetectedConflict,
     PlannedPage,
 )
+from app.core.utils import slugify
 
 
 def build_system_prompt(base: str, agents_md: str, skills: str) -> str:
@@ -60,7 +61,7 @@ def dict_to_analysis_result(data: dict, source_file: str, project: str) -> Analy
     def parse_planned(items: list) -> list[PlannedPage]:
         pages = []
         for item in (items or []):
-            slug = str(item.get("slug", ""))
+            slug = slugify(str(item.get("slug", "")))
             # Project is always the first segment of the slug.
             # LLM sometimes puts the source-file project on _general pages,
             # which breaks cross-project audit detection.

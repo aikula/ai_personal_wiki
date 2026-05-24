@@ -67,8 +67,26 @@ def heading_to_anchor(heading: str) -> str:
 # Slug validation
 # ═══════════════════════════════════════════════════════════════
 
-_SLUG_OK = re.compile(r"^[a-z0-9_/-]+$")
+_SLUG_OK = re.compile(r"^[\w/-]+$")
 _PROJECT_OK = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def slugify(text: str) -> str:
+    """Convert arbitrary text to a valid wiki slug.
+
+    - Lowercase
+    - Non-breaking hyphen (U+2011) → regular hyphen
+    - Spaces → _
+    - Any char not in [\\w/-] → _
+    - Collapse consecutive _
+    - Strip trailing _, preserve leading _ (e.g. _general)
+    """
+    text = text.lower()
+    text = text.replace("\u2011", "-")
+    text = re.sub(r"[^\w/-]+", "_", text)
+    text = re.sub(r"_+", "_", text)
+    text = text.rstrip("_")
+    return text
 
 
 def validate_slug(slug: str) -> None:
@@ -78,7 +96,7 @@ def validate_slug(slug: str) -> None:
     - no absolute paths (no leading ``/``);
     - no ``..``;
     - no backslashes;
-    - allowed characters: lowercase letters, numbers, ``_``, ``-``, ``/``;
+    - allowed characters: Unicode letters, digits, ``_``, ``-``, ``/``;
     - no empty segments;
     - no leading/trailing slash.
 
@@ -97,7 +115,7 @@ def validate_slug(slug: str) -> None:
     if not _SLUG_OK.fullmatch(slug):
         raise ValueError(
             f"Slug {slug!r} содержит недопустимые символы — "
-            f"допустимы только строчные буквы, цифры, _, -, /"
+            f"допустимы Unicode буквы, цифры, _, -, /"
         )
     for segment in slug.split("/"):
         if not segment:
