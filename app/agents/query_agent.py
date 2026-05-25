@@ -274,29 +274,6 @@ class QueryAgent:
         answer = self._generate_answer(question, wiki_context, session)
         return answer, [p.slug for p in pages], 1
 
-    # ── Policy: comparison ───────────────────────────────────────
-
-    def _policy_comparison(
-        self,
-        question: str,
-        keywords: list[str],
-        session: ChatSession,
-    ) -> tuple[str, list[str], int]:
-        pages = self._retrieve_pages(keywords, project=None, top_k=6)
-
-        by_project: dict[str, list[WikiPage]] = {}
-        for p in pages:
-            by_project.setdefault(p.project, []).append(p)
-
-        sections = []
-        for proj, proj_pages in sorted(by_project.items()):
-            content = "\n---\n".join(pp.raw for pp in proj_pages)
-            sections.append(f"### Project: {proj}\n{content}")
-        wiki_context = "\n\n".join(sections)
-
-        answer = self._generate_answer(question, wiki_context, session)
-        return answer, [p.slug for p in pages], 1
-
     # ── Policy: ReAct ────────────────────────────────────────────
 
     def _policy_react(

@@ -16,6 +16,7 @@ import asyncio
 import base64
 import logging
 import secrets
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -33,10 +34,22 @@ from app.core.metered_llm_client import QuotaExceededError, UsageRecordingError
 setup_logging()
 logger = logging.getLogger("wiki.api")
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    settings = get_settings()
+    _check_auth_config(settings)
+    if settings.app_mode == "multi_user":
+        build_control_store(settings)
+    app.state.llm_status = await _check_llm_connection()
+    yield
+
+
 app = FastAPI(
     title="Wiki Engine",
     description="LLM-powered personal wiki from markdown documents",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # ── CORS (for local dev with separate frontend port) ─────────────
@@ -129,15 +142,6 @@ async def _check_llm_connection() -> dict:
         )
         logger.warning(message)
         return {"connected": False, "warning": message}
-
-
-@app.on_event("startup")
-async def startup_checks() -> None:
-    settings = get_settings()
-    _check_auth_config(settings)
-    if settings.app_mode == "multi_user":
-        build_control_store(settings)
-    app.state.llm_status = await _check_llm_connection()
 
 
 @app.exception_handler(QuotaExceededError)

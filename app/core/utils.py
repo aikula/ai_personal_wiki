@@ -360,7 +360,7 @@ def normalize_wikilinks(content: str, existing_slugs: set[str] | None = None) ->
         content,
     )
     # Remove wikilinks nested inside provenance markers (LLM artifact)
-    # ^[raw/_general/[[slug|text]]‑file.pdf] → ^[raw/_general/text‑file.pdf]
+    # ^[raw/_general/[[slug|text]]-file.pdf] -> ^[raw/_general/text-file.pdf]
     while re.search(r'\^\[raw/[^\]]*?\[\[', content):
         content = re.sub(
             r'(\^\[raw/[^\]]*?)\[\[[^\]]*?\|([^\]]+?)\]\]([^\]]*\])',
