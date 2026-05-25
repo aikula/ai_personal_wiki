@@ -289,50 +289,50 @@
     .send-btn:disabled { opacity: .4; cursor: default; box-shadow: none; }
 
     /* ── Wiki tree panel ─────────────────────── */
-	    .wiki-shell { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-	    .wiki-toolbar {
-	      padding: 10px 12px 8px; border-bottom: 1px solid var(--border);
-	      background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(248,250,252,.88));
-	    }
-	    .wiki-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
-	    .wiki-stat {
-	      border: 1px solid var(--border); border-radius: 10px; padding: 7px 8px;
-	      background: var(--surface); box-shadow: 0 1px 2px rgba(15,23,42,.03);
-	    }
-	    .wiki-stat strong { display: block; font-size: 14px; color: var(--text); line-height: 1; }
-	    .wiki-stat span { display: block; margin-top: 3px; font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; }
-	    .wiki-workspace {
-	      flex: 1; min-height: 0; display: grid;
-	      grid-template-columns: minmax(180px, 38%) minmax(0, 1fr);
-	      background: rgba(248,250,252,.65);
-	    }
-	    .wiki-workspace.no-page { display: block; overflow-y: auto; }
-	    .wiki-nav-pane {
-	      min-width: 0; overflow-y: auto; border-right: 1px solid var(--border);
-	      background: rgba(255,255,255,.72);
-	    }
-	    .wiki-nav-pane::-webkit-scrollbar,
-	    .page-viewer::-webkit-scrollbar { width: 5px; }
-	    .wiki-nav-pane::-webkit-scrollbar-thumb,
-	    .page-viewer::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-	    .wiki-tree { padding: 8px 8px; }
+      .wiki-shell { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+      .wiki-toolbar {
+        padding: 10px 12px 8px; border-bottom: 1px solid var(--border);
+        background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(248,250,252,.88));
+      }
+      .wiki-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
+      .wiki-stat {
+        border: 1px solid var(--border); border-radius: 10px; padding: 7px 8px;
+        background: var(--surface); box-shadow: 0 1px 2px rgba(15,23,42,.03);
+      }
+      .wiki-stat strong { display: block; font-size: 14px; color: var(--text); line-height: 1; }
+      .wiki-stat span { display: block; margin-top: 3px; font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; }
+      .wiki-workspace {
+        flex: 1; min-height: 0; display: grid;
+        grid-template-columns: minmax(180px, 38%) minmax(0, 1fr);
+        background: rgba(248,250,252,.65);
+      }
+      .wiki-workspace.no-page { display: block; overflow-y: auto; }
+      .wiki-nav-pane {
+        min-width: 0; overflow-y: auto; border-right: 1px solid var(--border);
+        background: rgba(255,255,255,.72);
+      }
+      .wiki-nav-pane::-webkit-scrollbar,
+      .page-viewer::-webkit-scrollbar { width: 5px; }
+      .wiki-nav-pane::-webkit-scrollbar-thumb,
+      .page-viewer::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+      .wiki-tree { padding: 8px 8px; }
     .project-section { margin-bottom: 12px; }
     .project-label {
       font-size: 11px; font-weight: 700; color: var(--accent2);
       text-transform: uppercase; letter-spacing: .06em;
       padding: 6px 8px; margin-bottom: 4px;
     }
-	    .wiki-item {
-	      display: flex; align-items: center; gap: 8px;
-	      padding: 8px 10px; border-radius: 9px; cursor: pointer;
-	      font-size: 13px; color: var(--text-dim); transition: all .1s;
-	      margin: 1px 6px;
-	    }
-	    .wiki-item:hover { background: #F1F5F9; color: var(--text); transform: translateX(1px); }
-	    .wiki-item.active {
-	      background: linear-gradient(135deg, rgba(37,99,235,.12), rgba(79,70,229,.08));
-	      color: var(--accent); font-weight: 600; box-shadow: inset 3px 0 0 var(--accent);
-	    }
+      .wiki-item {
+        display: flex; align-items: center; gap: 8px;
+        padding: 8px 10px; border-radius: 9px; cursor: pointer;
+        font-size: 13px; color: var(--text-dim); transition: all .1s;
+        margin: 1px 6px;
+      }
+      .wiki-item:hover { background: #F1F5F9; color: var(--text); transform: translateX(1px); }
+      .wiki-item.active {
+        background: linear-gradient(135deg, rgba(37,99,235,.12), rgba(79,70,229,.08));
+        color: var(--accent); font-weight: 600; box-shadow: inset 3px 0 0 var(--accent);
+      }
     .wiki-item .item-type { font-size: 10px; color: var(--text-dim);
                              background: var(--surface2); border-radius: 4px;
                              padding: 2px 5px; }
@@ -351,63 +351,63 @@
     .empty-state .icon { font-size: 32px; margin-bottom: 12px; }
     .empty-state .title { font-size: 14px; color: var(--text); margin-bottom: 4px; }
     .empty-state .desc { font-size: 13px; }
-	    .wiki-search-input {
-	      width: 100%; background: var(--surface2); border: 1px solid var(--border);
-	      color: var(--text); border-radius: 8px; padding: 8px 12px;
-	      font-size: 13px; outline: none;
-	      transition: border-color .15s, box-shadow .15s;
-	    }
-	    .wiki-search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+      .wiki-search-input {
+        width: 100%; background: var(--surface2); border: 1px solid var(--border);
+        color: var(--text); border-radius: 8px; padding: 8px 12px;
+        font-size: 13px; outline: none;
+        transition: border-color .15s, box-shadow .15s;
+      }
+      .wiki-search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
 
-	    /* ── Page viewer (right panel bottom) ───── */
-	    .page-viewer {
-	      min-width: 0; overflow-y: auto; padding: 18px;
-	      background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
-	    }
-	    .page-viewer::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
-	    .page-header-card {
-	      margin: 0 0 16px; padding: 12px;
-	      background: rgba(255,255,255,.94); border-bottom: 1px solid var(--border);
-	      border: 1px solid var(--border); border-radius: 14px;
-	    }
-	    .page-compact-head { display: flex; align-items: flex-start; gap: 10px; justify-content: space-between; }
-	    .page-title { font-size: 18px; line-height: 1.25; font-weight: 800; margin-bottom: 2px; color: var(--text); letter-spacing: -.02em; }
-	    .page-slug { font-size: 11px; color: var(--text-dim); overflow-wrap: anywhere; }
-	    .page-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-	    .page-tag { font-size: 11px; background: var(--surface2);
-	                 border: 1px solid var(--border); border-radius: 12px; padding: 3px 8px; }
-	    .page-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
-	    .page-action-btn {
-	      border: 1px solid var(--border); border-radius: 9px; padding: 6px 10px;
-	      background: var(--surface); color: var(--text-dim); font-size: 12px;
-	      cursor: pointer; transition: all .15s;
-	    }
-	    .page-action-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(37,99,235,.06); }
-	    .page-detail-toggle { white-space: nowrap; }
-	    .page-synopsis {
-	      background: #EFF6FF; border: 1px solid #BFDBFE; color: #1E3A8A;
-	      border-radius: 12px; padding: 12px 14px; font-size: 13px; line-height: 1.55;
-	      margin-bottom: 14px;
-	    }
-	    .page-links-card {
-	      border: 1px solid var(--border); border-radius: 12px; padding: 12px;
-	      background: var(--surface); margin: 14px 0; box-shadow: 0 1px 2px rgba(15,23,42,.03);
-	    }
-	    .page-links-title { font-size: 12px; font-weight: 700; color: var(--text-dim); margin-bottom: 8px; text-transform: uppercase; letter-spacing: .04em; }
-	    .page-links-list { display: flex; flex-wrap: wrap; gap: 6px; }
-	    .page-link-chip {
-	      border: 1px solid var(--border); border-radius: 999px; padding: 4px 9px;
-	      background: var(--surface2); color: var(--accent); font-size: 12px; cursor: pointer;
-	    }
-	    .page-link-chip:hover { border-color: var(--accent); background: rgba(37,99,235,.08); }
-	    .page-content { font-size: 15px; line-height: 1.78; color: var(--text); overflow-wrap: anywhere; }
-	    .page-content h1,.page-content h2,.page-content h3 { color: var(--text); margin: 18px 0 8px; letter-spacing: -.01em; }
-	    .page-content h1 { font-size: 22px; }
-	    .page-content h2 { font-size: 18px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
-	    .page-content h3 { font-size: 16px; color: #334155; }
-	    .page-content p { margin-bottom: 10px; }
-	    .page-content code { background: rgba(0,0,0,.06); padding: 2px 6px;
-	                          border-radius: 4px; font-size: 13px; }
+      /* ── Page viewer (right panel bottom) ───── */
+      .page-viewer {
+        min-width: 0; overflow-y: auto; padding: 18px;
+        background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
+      }
+      .page-viewer::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+      .page-header-card {
+        margin: 0 0 16px; padding: 12px;
+        background: rgba(255,255,255,.94); border-bottom: 1px solid var(--border);
+        border: 1px solid var(--border); border-radius: 14px;
+      }
+      .page-compact-head { display: flex; align-items: flex-start; gap: 10px; justify-content: space-between; }
+      .page-title { font-size: 18px; line-height: 1.25; font-weight: 800; margin-bottom: 2px; color: var(--text); letter-spacing: -.02em; }
+      .page-slug { font-size: 11px; color: var(--text-dim); overflow-wrap: anywhere; }
+      .page-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+      .page-tag { font-size: 11px; background: var(--surface2);
+                   border: 1px solid var(--border); border-radius: 12px; padding: 3px 8px; }
+      .page-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+      .page-action-btn {
+        border: 1px solid var(--border); border-radius: 9px; padding: 6px 10px;
+        background: var(--surface); color: var(--text-dim); font-size: 12px;
+        cursor: pointer; transition: all .15s;
+      }
+      .page-action-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(37,99,235,.06); }
+      .page-detail-toggle { white-space: nowrap; }
+      .page-synopsis {
+        background: #EFF6FF; border: 1px solid #BFDBFE; color: #1E3A8A;
+        border-radius: 12px; padding: 12px 14px; font-size: 13px; line-height: 1.55;
+        margin-bottom: 14px;
+      }
+      .page-links-card {
+        border: 1px solid var(--border); border-radius: 12px; padding: 12px;
+        background: var(--surface); margin: 14px 0; box-shadow: 0 1px 2px rgba(15,23,42,.03);
+      }
+      .page-links-title { font-size: 12px; font-weight: 700; color: var(--text-dim); margin-bottom: 8px; text-transform: uppercase; letter-spacing: .04em; }
+      .page-links-list { display: flex; flex-wrap: wrap; gap: 6px; }
+      .page-link-chip {
+        border: 1px solid var(--border); border-radius: 999px; padding: 4px 9px;
+        background: var(--surface2); color: var(--accent); font-size: 12px; cursor: pointer;
+      }
+      .page-link-chip:hover { border-color: var(--accent); background: rgba(37,99,235,.08); }
+      .page-content { font-size: 15px; line-height: 1.78; color: var(--text); overflow-wrap: anywhere; }
+      .page-content h1,.page-content h2,.page-content h3 { color: var(--text); margin: 18px 0 8px; letter-spacing: -.01em; }
+      .page-content h1 { font-size: 22px; }
+      .page-content h2 { font-size: 18px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+      .page-content h3 { font-size: 16px; color: #334155; }
+      .page-content p { margin-bottom: 10px; }
+      .page-content code { background: rgba(0,0,0,.06); padding: 2px 6px;
+                            border-radius: 4px; font-size: 13px; }
     .page-content pre { background: var(--surface2); padding: 12px;
                           border-radius: 8px; overflow-x: auto; margin: 8px 0;
                           border: 1px solid var(--border); font-size: 13px; }
@@ -656,30 +656,30 @@
       border-radius: 8px; padding: 10px 16px; margin: 8px 16px;
       font-size: 13px; color: var(--red); display: flex; align-items: center; gap: 8px;
     }
-	    .quota-banner .spacer { flex: 1; }
+      .quota-banner .spacer { flex: 1; }
 
-	    @media (max-width: 1100px) {
-	      :root { --right-panel-w: min(88vw, 520px); }
-	      .panel:not(.right) { width: 0 !important; }
-	    }
+      @media (max-width: 1100px) {
+        :root { --right-panel-w: min(88vw, 520px); }
+        .panel:not(.right) { width: 0 !important; }
+      }
 
-	    @media (max-width: 760px) {
-	      .header { gap: 6px; padding: 0 10px; }
-	      .header h1 { font-size: 14px; }
-	      .header-btn { padding: 6px 9px; font-size: 12px; }
-	      .panel.right {
-	        position: fixed; top: var(--header-h); right: 0; bottom: 0;
-	        z-index: 30; max-width: 100vw;
-	      }
-	      .wiki-workspace { display: flex; flex-direction: column; }
-	      .wiki-nav-pane { max-height: 38%; border-right: none; border-bottom: 1px solid var(--border); }
-	      .page-viewer { padding: 14px; }
-	      .page-header-card { padding: 12px; }
-	    .composer-row { flex-direction: column; align-items: stretch; }
-	      .project-badge { width: 100%; min-width: 0; }
-	      .project-menu { left: 0; right: 0; min-width: 0; }
-	    }
-	  </style>
+      @media (max-width: 760px) {
+        .header { gap: 6px; padding: 0 10px; }
+        .header h1 { font-size: 14px; }
+        .header-btn { padding: 6px 9px; font-size: 12px; }
+        .panel.right {
+          position: fixed; top: var(--header-h); right: 0; bottom: 0;
+          z-index: 30; max-width: 100vw;
+        }
+        .wiki-workspace { display: flex; flex-direction: column; }
+        .wiki-nav-pane { max-height: 38%; border-right: none; border-bottom: 1px solid var(--border); }
+        .page-viewer { padding: 14px; }
+        .page-header-card { padding: 12px; }
+      .composer-row { flex-direction: column; align-items: stretch; }
+        .project-badge { width: 100%; min-width: 0; }
+        .project-menu { left: 0; right: 0; min-width: 0; }
+      }
+    </style>
 </head>
 <body>
 <div id="root"></div>
@@ -2013,10 +2013,10 @@ function WikiPanel({ highlightedSlug, onPageOpen, refreshKey }) {
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState(null);
   const [activePage, setActivePage] = useState(null);
-	  const [pageData, setPageData] = useState(null);
-	  const [pageNotFound, setPageNotFound] = useState(null);
-	  const [tab, setTab] = useState('wiki'); // 'wiki' | 'conflicts'
-	  const [showPageDetails, setShowPageDetails] = useState(false);
+    const [pageData, setPageData] = useState(null);
+    const [pageNotFound, setPageNotFound] = useState(null);
+    const [tab, setTab] = useState('wiki'); // 'wiki' | 'conflicts'
+    const [showPageDetails, setShowPageDetails] = useState(false);
 
   const loadTree = async () => {
     try { setTree(await api.get('/wiki/tree')); } catch {}
@@ -2066,12 +2066,12 @@ function WikiPanel({ highlightedSlug, onPageOpen, refreshKey }) {
       window.location.hash = targetHash;
     }
     try {
-	      const data = await api.get(`/wiki/page/${cleanSlug}`);
-	      setPageData(data);
-	      setShowPageDetails(false);
-	    } catch(e) {
-	      setPageData(null);
-	      setPageNotFound(cleanSlug);
+        const data = await api.get(`/wiki/page/${cleanSlug}`);
+        setPageData(data);
+        setShowPageDetails(false);
+      } catch(e) {
+        setPageData(null);
+        setPageNotFound(cleanSlug);
       // Clear the broken hash so next reload doesn't repeat the 404
       history.replaceState(null, '', window.location.pathname);
     }
@@ -2086,13 +2086,13 @@ function WikiPanel({ highlightedSlug, onPageOpen, refreshKey }) {
     } catch {}
   };
 
-	  const confClass = conf =>
-	    conf >= 0.8 ? 'conf-high' : conf >= 0.5 ? 'conf-mid' : 'conf-low';
+    const confClass = conf =>
+      conf >= 0.8 ? 'conf-high' : conf >= 0.5 ? 'conf-mid' : 'conf-low';
 
-	  const copyPageSlug = async () => {
-	    if (!pageData?.slug || !navigator.clipboard) return;
-	    try { await navigator.clipboard.writeText(pageData.slug); } catch {}
-	  };
+    const copyPageSlug = async () => {
+      if (!pageData?.slug || !navigator.clipboard) return;
+      try { await navigator.clipboard.writeText(pageData.slug); } catch {}
+    };
 
   const renderTree = () => {
     const items = searchResults
@@ -2162,96 +2162,96 @@ function WikiPanel({ highlightedSlug, onPageOpen, refreshKey }) {
       {tab === 'conflicts' && <ConflictsPanel />}
       {tab === 'drafts' && <DraftsPanel />}
 
-	      {tab === 'wiki' && (
-	        <div className="wiki-shell">
-	          <div className="wiki-toolbar">
-	            <div className="wiki-stats">
-	              <div className="wiki-stat">
-	                <strong>{tree.total_pages}</strong>
-	                <span>страниц</span>
-	              </div>
-	              <div className="wiki-stat">
-	                <strong>{Object.keys(tree.projects).length}</strong>
-	                <span>проектов</span>
-	              </div>
-	              <div className="wiki-stat">
-	                <strong>{tree.open_conflicts}</strong>
-	                <span>конфликтов</span>
-	              </div>
-	            </div>
-	            <input className="wiki-search-input" placeholder="Поиск по wiki…"
-	                   value={search} onChange={e => handleSearch(e.target.value)} />
-	          </div>
-	          <div className={`wiki-workspace ${pageData || pageNotFound ? '' : 'no-page'}`}>
-	            <div className="wiki-nav-pane">
-	              {renderTree()}
-	            </div>
+        {tab === 'wiki' && (
+          <div className="wiki-shell">
+            <div className="wiki-toolbar">
+              <div className="wiki-stats">
+                <div className="wiki-stat">
+                  <strong>{tree.total_pages}</strong>
+                  <span>страниц</span>
+                </div>
+                <div className="wiki-stat">
+                  <strong>{Object.keys(tree.projects).length}</strong>
+                  <span>проектов</span>
+                </div>
+                <div className="wiki-stat">
+                  <strong>{tree.open_conflicts}</strong>
+                  <span>конфликтов</span>
+                </div>
+              </div>
+              <input className="wiki-search-input" placeholder="Поиск по wiki…"
+                     value={search} onChange={e => handleSearch(e.target.value)} />
+            </div>
+            <div className={`wiki-workspace ${pageData || pageNotFound ? '' : 'no-page'}`}>
+              <div className="wiki-nav-pane">
+                {renderTree()}
+              </div>
 
-	          {pageData && (
-	            <div className="page-viewer">
-	              {pageData.superseded_by && (
-	                  <div className="superseded-banner">
-	                    ⚠️ Заменено на{' '}
+            {pageData && (
+              <div className="page-viewer">
+                {pageData.superseded_by && (
+                    <div className="superseded-banner">
+                      ⚠️ Заменено на{' '}
                   <span className="wikilink" onClick={() => openPage(pageData.superseded_by)}>
                     [[{pageData.superseded_by}]]
-	                  </span>
-	                </div>
-	              )}
-	              <div className="page-header-card">
-	                <div className="page-compact-head">
-	                  <div>
-	                    <div className="page-title">{pageData.title}</div>
-	                    <div className="page-slug">{pageData.slug}</div>
-	                  </div>
-	                  <button className="page-action-btn page-detail-toggle"
-	                          onClick={() => setShowPageDetails(v => !v)}>
-	                    {showPageDetails ? 'Скрыть детали' : 'Детали'}
-	                  </button>
-	                </div>
-	                {showPageDetails && (
-	                  <>
-	                    <div className="page-meta" style={{marginTop:10}}>
-	                      <span className="page-tag">{pageData.project}</span>
-	                      <span className="page-tag">{pageData.page_type}</span>
-	                      <span className={`page-tag ${confClass(pageData.confidence)}`}>
-	                        уверенность: {Math.round(pageData.confidence*100)}%
-	                      </span>
-	                      {pageData.tags.map(t => (
-	                        <span key={t} className="page-tag">{t}</span>
-	                      ))}
-	                    </div>
-	                    {(pageData.needs_review || pageData.source_coverage || pageData.wikilinks?.length > 0) && (
-	                      <div className="page-meta" style={{marginBottom:0}}>
-	                        {pageData.needs_review && <span className="page-tag" style={{color:'var(--red)', borderColor:'var(--red)'}}>требует проверки</span>}
-	                        {pageData.source_coverage && <span className="page-tag">{pageData.source_coverage} покрытие</span>}
-	                        {pageData.wikilinks?.length > 0 && <span className="page-tag">{pageData.wikilinks.length} → ссылок</span>}
-	                      </div>
-	                    )}
-	                    <div className="page-actions">
-	                      <button className="page-action-btn" onClick={copyPageSlug}>Скопировать slug</button>
-	                      <button className="page-action-btn" onClick={() => window.open(`/api/wiki/page/${pageData.slug}`, '_blank')}>
-	                        JSON
-	                      </button>
-	                    </div>
-	                  </>
-	                )}
-	              </div>
-	              {pageData.synopsis && (
-	                <div className="page-synopsis">{pageData.synopsis}</div>
-	              )}
-	              {pageData.wikilinks?.length > 0 && (
-	                <div className="page-links-card">
-	                  <div className="page-links-title">Связанные страницы</div>
-	                  <div className="page-links-list">
-	                    {pageData.wikilinks.slice(0, 18).map(slug => (
-	                      <button key={slug} className="page-link-chip" onClick={() => openPage(slug)}>
-	                        {slug.split('/').pop()}
-	                      </button>
-	                    ))}
-	                  </div>
-	                </div>
-	              )}
-	              <div className="page-content"
+                    </span>
+                  </div>
+                )}
+                <div className="page-header-card">
+                  <div className="page-compact-head">
+                    <div>
+                      <div className="page-title">{pageData.title}</div>
+                      <div className="page-slug">{pageData.slug}</div>
+                    </div>
+                    <button className="page-action-btn page-detail-toggle"
+                            onClick={() => setShowPageDetails(v => !v)}>
+                      {showPageDetails ? 'Скрыть детали' : 'Детали'}
+                    </button>
+                  </div>
+                  {showPageDetails && (
+                    <>
+                      <div className="page-meta" style={{marginTop:10}}>
+                        <span className="page-tag">{pageData.project}</span>
+                        <span className="page-tag">{pageData.page_type}</span>
+                        <span className={`page-tag ${confClass(pageData.confidence)}`}>
+                          уверенность: {Math.round(pageData.confidence*100)}%
+                        </span>
+                        {pageData.tags.map(t => (
+                          <span key={t} className="page-tag">{t}</span>
+                        ))}
+                      </div>
+                      {(pageData.needs_review || pageData.source_coverage || pageData.wikilinks?.length > 0) && (
+                        <div className="page-meta" style={{marginBottom:0}}>
+                          {pageData.needs_review && <span className="page-tag" style={{color:'var(--red)', borderColor:'var(--red)'}}>требует проверки</span>}
+                          {pageData.source_coverage && <span className="page-tag">{pageData.source_coverage} покрытие</span>}
+                          {pageData.wikilinks?.length > 0 && <span className="page-tag">{pageData.wikilinks.length} → ссылок</span>}
+                        </div>
+                      )}
+                      <div className="page-actions">
+                        <button className="page-action-btn" onClick={copyPageSlug}>Скопировать slug</button>
+                        <button className="page-action-btn" onClick={() => window.open(`/api/wiki/page/${pageData.slug}`, '_blank')}>
+                          JSON
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+                {pageData.synopsis && (
+                  <div className="page-synopsis">{pageData.synopsis}</div>
+                )}
+                {pageData.wikilinks?.length > 0 && (
+                  <div className="page-links-card">
+                    <div className="page-links-title">Связанные страницы</div>
+                    <div className="page-links-list">
+                      {pageData.wikilinks.slice(0, 18).map(slug => (
+                        <button key={slug} className="page-link-chip" onClick={() => openPage(slug)}>
+                          {slug.split('/').pop()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="page-content"
                    dangerouslySetInnerHTML={{ __html: rewriteRawDownloadLinks(pageData.content_html) }}
                    onClick={e => {
                      const target = e.target;
@@ -2264,21 +2264,21 @@ function WikiPanel({ highlightedSlug, onPageOpen, refreshKey }) {
                        if (targetSlug) openPage(targetSlug);
                      }
                    }} />
-	            </div>
-	          )}
+              </div>
+            )}
 
-	          {!pageData && pageNotFound && (
-	            <div className="page-viewer" style={{display:'flex', flexDirection:'column',
-	              alignItems:'center', justifyContent:'center', gap:12, color:'var(--text-dim)'}}>
-	              <div style={{fontSize:32}}>📄</div>
-	              <div style={{fontSize:14, color:'var(--text)'}}>Страница не найдена</div>
+            {!pageData && pageNotFound && (
+              <div className="page-viewer" style={{display:'flex', flexDirection:'column',
+                alignItems:'center', justifyContent:'center', gap:12, color:'var(--text-dim)'}}>
+                <div style={{fontSize:32}}>📄</div>
+                <div style={{fontSize:14, color:'var(--text)'}}>Страница не найдена</div>
               <div style={{fontSize:12}}>{pageNotFound}</div>
-	              <div style={{fontSize:12}}>Эта страница указана в [[wikilink]], но ещё не создана.</div>
-	            </div>
-	          )}
-	          </div>
-	        </div>
-	      )}
+                <div style={{fontSize:12}}>Эта страница указана в [[wikilink]], но ещё не создана.</div>
+              </div>
+            )}
+            </div>
+          </div>
+        )}
     </div>
   );
 }
@@ -2355,11 +2355,11 @@ function App() {
   // Chat input
   const [input, setInput] = useState('');
   const [projectFilters, setProjectFilters] = useState([]);
-	  const [availableProjects, setAvailableProjects] = useState([]);
-	  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
-	  const [showManageMenu, setShowManageMenu] = useState(false);
-	  const projectDropdownRef = useRef();
-	  const manageMenuRef = useRef();
+    const [availableProjects, setAvailableProjects] = useState([]);
+    const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+    const [showManageMenu, setShowManageMenu] = useState(false);
+    const projectDropdownRef = useRef();
+    const manageMenuRef = useRef();
 
   // Load projects for filter
   React.useEffect(() => {
@@ -2376,14 +2376,14 @@ function App() {
 
   // Close dropdown on outside click
   React.useEffect(() => {
-	    const handler = (e) => {
-	      if (projectDropdownRef.current && !projectDropdownRef.current.contains(e.target)) {
-	        setShowProjectDropdown(false);
-	      }
-	      if (manageMenuRef.current && !manageMenuRef.current.contains(e.target)) {
-	        setShowManageMenu(false);
-	      }
-	    };
+      const handler = (e) => {
+        if (projectDropdownRef.current && !projectDropdownRef.current.contains(e.target)) {
+          setShowProjectDropdown(false);
+        }
+        if (manageMenuRef.current && !manageMenuRef.current.contains(e.target)) {
+          setShowManageMenu(false);
+        }
+      };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
@@ -2552,55 +2552,55 @@ function App() {
 
   return (
     <div id="root" style={{display:'flex', flexDirection:'column', height:'100vh'}}>
-	      {/* Header */}
-	      <div className="header">
-	        <div className="app-brand">
-	          <div className="brand-mark">W</div>
-	          <div className="brand-copy">
-	            <strong>Wiki Движок</strong>
-	            <span>personal knowledge</span>
-	          </div>
-	        </div>
-	        <div className="header-divider" />
-	        <button className="icon-btn" onClick={() => setLeftOpen(o => !o)} title="История чатов">
-	          {leftOpen ? '◀' : '▶'}
-	        </button>
-	        <div className="spacer" />
-	        <div className="header-actions">
-	          {activeSessionId && messages.length >= 6 && (
-	            <button className="header-btn subtle" onClick={crystallize} title="Сохранить сессию как wiki-страницу">
-	              Кристаллизовать
-	            </button>
-	          )}
-	          <button className="header-btn primary" onClick={() => setShowUpload(true)}>
-	            📂 Загрузить
-	          </button>
-	          <button className="header-btn subtle" onClick={() => setShowAudit(true)}>
-	            Аудит
-	          </button>
-	          <div className="header-divider" />
-	          <div className="manage-menu-wrap" ref={manageMenuRef}>
-	            <button className="header-btn subtle" onClick={() => setShowManageMenu(v => !v)}>
-	              Управление
-	            </button>
-	            {showManageMenu && (
-	              <div className="manage-menu">
-	                <div className="caption">Операции с хранилищем wiki</div>
-	                <button onClick={() => { setShowManageMenu(false); setShowRebuild(true); }}>
-	                  Перестроить из RAW
-	                </button>
-	                <button className="danger" onClick={() => { setShowManageMenu(false); setShowClear(true); }}>
-	                  Очистить wiki
-	                </button>
-	              </div>
-	            )}
-	          </div>
-	          <button className="icon-btn" onClick={() => setRightOpen(o => !o)} title="Wiki панель">
-	            {rightOpen ? '▶' : '◀'}
-	          </button>
-	        </div>
-	        {isMultiUser && <UserMenu />}
-	      </div>
+        {/* Header */}
+        <div className="header">
+          <div className="app-brand">
+            <div className="brand-mark">W</div>
+            <div className="brand-copy">
+              <strong>Wiki Движок</strong>
+              <span>personal knowledge</span>
+            </div>
+          </div>
+          <div className="header-divider" />
+          <button className="icon-btn" onClick={() => setLeftOpen(o => !o)} title="История чатов">
+            {leftOpen ? '◀' : '▶'}
+          </button>
+          <div className="spacer" />
+          <div className="header-actions">
+            {activeSessionId && messages.length >= 6 && (
+              <button className="header-btn subtle" onClick={crystallize} title="Сохранить сессию как wiki-страницу">
+                Кристаллизовать
+              </button>
+            )}
+            <button className="header-btn primary" onClick={() => setShowUpload(true)}>
+              📂 Загрузить
+            </button>
+            <button className="header-btn subtle" onClick={() => setShowAudit(true)}>
+              Аудит
+            </button>
+            <div className="header-divider" />
+            <div className="manage-menu-wrap" ref={manageMenuRef}>
+              <button className="header-btn subtle" onClick={() => setShowManageMenu(v => !v)}>
+                Управление
+              </button>
+              {showManageMenu && (
+                <div className="manage-menu">
+                  <div className="caption">Операции с хранилищем wiki</div>
+                  <button onClick={() => { setShowManageMenu(false); setShowRebuild(true); }}>
+                    Перестроить из RAW
+                  </button>
+                  <button className="danger" onClick={() => { setShowManageMenu(false); setShowClear(true); }}>
+                    Очистить wiki
+                  </button>
+                </div>
+              )}
+            </div>
+            <button className="icon-btn" onClick={() => setRightOpen(o => !o)} title="Wiki панель">
+              {rightOpen ? '▶' : '◀'}
+            </button>
+          </div>
+          {isMultiUser && <UserMenu />}
+        </div>
 
       {/* Quota exceeded banner */}
       {showQuotaBanner && (
@@ -2686,50 +2686,50 @@ function App() {
             <div ref={messagesEndRef} />
           </div>
 
-	          <div className="input-bar">
-	            {projectFilters.length > 0 && (
-	              <div className="project-filter-row">
-	                {projectFilters.map(p => (
-	                  <span key={p} className="project-chip">
-	                    {p}
-	                    <button onClick={() => toggleProjectFilter(p)}>✕</button>
-	                  </span>
-	                ))}
-	                <span style={{fontSize:11, color:'var(--text-dim)', cursor:'pointer'}}
-	                      onClick={clearProjectFilters}>Сбросить</span>
-	              </div>
-	            )}
-	            <div className="composer-card">
-	              <div className="composer-row">
-	                <div className="project-select-wrap" ref={projectDropdownRef}>
-	                  <button className={`project-badge ${projectFilters.length > 0 ? 'active' : ''}`}
-	                          onClick={() => setShowProjectDropdown(v => !v)}>
-	                    <span className="project-badge-copy">
-	                      <span className="project-badge-label">Проекты</span>
-	                      <span className="project-badge-value">
-	                        {projectFilters.length > 0 ? `${projectFilters.length} выбрано` : 'Все проекты'}
-	                      </span>
-	                    </span>
-	                    <span style={{fontSize:10, flexShrink:0}}>▼</span>
-	                  </button>
-	                  {showProjectDropdown && (
-	                    <div className="project-menu">
-	                      <div className="project-menu-head">
-	                        <span style={{fontSize:12, fontWeight:600, color:'var(--text)'}}>Фильтр по проекту</span>
-	                        {projectFilters.length > 0 && (
-	                          <span style={{fontSize:11, color:'var(--accent)', cursor:'pointer', fontWeight:500}}
+            <div className="input-bar">
+              {projectFilters.length > 0 && (
+                <div className="project-filter-row">
+                  {projectFilters.map(p => (
+                    <span key={p} className="project-chip">
+                      {p}
+                      <button onClick={() => toggleProjectFilter(p)}>✕</button>
+                    </span>
+                  ))}
+                  <span style={{fontSize:11, color:'var(--text-dim)', cursor:'pointer'}}
+                        onClick={clearProjectFilters}>Сбросить</span>
+                </div>
+              )}
+              <div className="composer-card">
+                <div className="composer-row">
+                  <div className="project-select-wrap" ref={projectDropdownRef}>
+                    <button className={`project-badge ${projectFilters.length > 0 ? 'active' : ''}`}
+                            onClick={() => setShowProjectDropdown(v => !v)}>
+                      <span className="project-badge-copy">
+                        <span className="project-badge-label">Проекты</span>
+                        <span className="project-badge-value">
+                          {projectFilters.length > 0 ? `${projectFilters.length} выбрано` : 'Все проекты'}
+                        </span>
+                      </span>
+                      <span style={{fontSize:10, flexShrink:0}}>▼</span>
+                    </button>
+                    {showProjectDropdown && (
+                      <div className="project-menu">
+                        <div className="project-menu-head">
+                          <span style={{fontSize:12, fontWeight:600, color:'var(--text)'}}>Фильтр по проекту</span>
+                          {projectFilters.length > 0 && (
+                            <span style={{fontSize:11, color:'var(--accent)', cursor:'pointer', fontWeight:500}}
                                 onClick={clearProjectFilters}>Сбросить</span>
                         )}
                       </div>
-	                      <div style={{maxHeight:200, overflowY:'auto'}}>
-	                        {availableProjects.map(p => (
-	                          <div key={p.name}
-	                               onClick={() => toggleProjectFilter(p.name)}
-	                               className={`project-option ${projectFilters.includes(p.name) ? 'active' : ''}`}>
-	                            <div className="project-check">
-	                              {projectFilters.includes(p.name) && (
-	                                <span style={{color:'#fff', fontSize:10, lineHeight:1}}>✓</span>
-	                              )}
+                        <div style={{maxHeight:200, overflowY:'auto'}}>
+                          {availableProjects.map(p => (
+                            <div key={p.name}
+                                 onClick={() => toggleProjectFilter(p.name)}
+                                 className={`project-option ${projectFilters.includes(p.name) ? 'active' : ''}`}>
+                              <div className="project-check">
+                                {projectFilters.includes(p.name) && (
+                                  <span style={{color:'#fff', fontSize:10, lineHeight:1}}>✓</span>
+                                )}
                             </div>
                             <span style={{fontSize:13, color: projectFilters.includes(p.name) ? 'var(--accent)' : 'var(--text)', fontWeight: projectFilters.includes(p.name) ? 500 : 400}}>
                               {p.name}
@@ -2745,33 +2745,33 @@ function App() {
                           </div>
                         )}
                       </div>
-	                    </div>
-	                  )}
-	                </div>
-	                <div className="input-wrap" style={{flex:1}}>
-	                  <textarea ref={textareaRef}
-	                    className="chat-input" rows={1}
-	                    placeholder="Спросите что-нибудь о вашей wiki…"
-	                    value={input}
-	                    onChange={e => {
-	                      setInput(e.target.value);
-	                      e.target.style.height = 'auto';
-	                      e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
-	                    }}
-	                    onKeyDown={handleKey}
-	                    disabled={isStreaming}
-	                  />
-	                </div>
-	                <button className="send-btn" onClick={send} disabled={isStreaming || !input.trim()}>
-	                  {isStreaming ? '⏳' : '↑'}
-	                </button>
-	              </div>
-	            </div>
-	          </div>
-	        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="input-wrap" style={{flex:1}}>
+                    <textarea ref={textareaRef}
+                      className="chat-input" rows={1}
+                      placeholder="Спросите что-нибудь о вашей wiki…"
+                      value={input}
+                      onChange={e => {
+                        setInput(e.target.value);
+                        e.target.style.height = 'auto';
+                        e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
+                      }}
+                      onKeyDown={handleKey}
+                      disabled={isStreaming}
+                    />
+                  </div>
+                  <button className="send-btn" onClick={send} disabled={isStreaming || !input.trim()}>
+                    {isStreaming ? '⏳' : '↑'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
 
         {/* Right Panel — wiki navigation */}
-	        <div className="panel right" style={{ width: rightOpen ? 'var(--right-panel-w)' : '0' }}>
+          <div className="panel right" style={{ width: rightOpen ? 'var(--right-panel-w)' : '0' }}>
           <WikiPanel
             highlightedSlug={highlightedSlug}
             onPageOpen={setHighlightedSlug}
