@@ -4,7 +4,7 @@ import pytest
 
 from app.config import Settings
 from app.core.linter import WikiLinter
-from app.core.wiki_fs import WikiFS
+from app.core.wiki_fs import SourceCard, WikiFS
 
 
 @pytest.fixture
@@ -83,6 +83,29 @@ class TestLintMissingFrontmatter:
         with pytest.raises(FrontmatterError):
             fs.write_page("bad/page", meta=bad_meta, content="x")
 
+    def test_linter_requires_all_frontmatter_fields(self, linter, fs):
+        path = fs.wiki_dir / "manual" / "page.md"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            "---\n"
+            "title: Manual\n"
+            "project: _general\n"
+            "type: entity\n"
+            "confidence: 1.0\n"
+            "sources: 1\n"
+            f"last_confirmed: {date.today().isoformat()}\n"
+            f"created: {date.today().isoformat()}\n"
+            "---\n"
+            "# Manual\n",
+            encoding="utf-8",
+        )
+
+        report = linter.lint(slugs=["manual/page"])
+        details = "\n".join(e.detail for e in report.errors)
+        assert "'tags'" in details
+        assert "'supersedes'" in details
+        assert "'superseded_by'" in details
+
 
 class TestLintCharLimit:
     def test_exceeds_limit(self, linter, fs, settings):
@@ -143,3 +166,37 @@ class TestLintProvenance:
                       content="Fact ^[raw/nonexistent/source.md]")
         report = linter.lint(slugs=["test/page"])
         assert any(e.kind == "invalid_provenance" for e in report.issues)
+
+
+class TestLintReadOnly:
+    def test_source_drift_missing_source_does_not_update_source_card(self, linter, fs):
+        fs.save_raw_file("proj", "source.md", "old")
+        old_sha = fs.compute_source_sha256("old")
+        fs.write_source_card(SourceCard(
+            source_id="proj/source",
+            source_path="raw/proj/source.md",
+            source_sha256=old_sha,
+            title="Source: source.md",
+            project="proj",
+            ingest_status="active",
+            created=date.today().isoformat(),
+            last_confirmed=date.today().isoformat(),
+            last_ingested="2026-05-25T00:00:00",
+            outline=[],
+            chunk_count=1,
+            chunks_processed=1,
+            chunks_failed=0,
+            pages_planned=[],
+            pages_written=["proj/page"],
+            conflicts_opened=[],
+            claims_files=[],
+            drift_status="unknown",
+        ))
+        before = (fs.wiki_dir / "_sources" / "proj" / "source.md").read_text(encoding="utf-8")
+        (fs.raw_dir / "proj" / "source.md").unlink()
+
+        report = linter.lint()
+        after = (fs.wiki_dir / "_sources" / "proj" / "source.md").read_text(encoding="utf-8")
+
+        assert any(e.kind == "missing_source" for e in report.issues)
+        assert after == before

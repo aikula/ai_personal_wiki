@@ -1,7 +1,7 @@
 """
 linter.py — Structural wiki linter.
 
-Checks (all in-process, no LLM, no I/O beyond reading):
+Checks (all in-process, no LLM, no writes):
   1. broken_wikilink    — [[slug]] references non-existent page
   2. broken_path_link   — [text](path.md) file not found
   3. missing_anchor     — [[slug#anchor]] anchor not in target page
@@ -13,6 +13,12 @@ Checks (all in-process, no LLM, no I/O beyond reading):
   9. duplicate_title    — two pages with same title in same project
  10. missing_wikilink   — known alias appears without [[link]]
  11. invalid_provenance — ^[raw/...] marker references non-existent raw file
+ 12. source_drift       — Source Card raw file changed since ingest
+ 13. missing_source     — Source Card raw file no longer exists
+ 14. orphan_source_card — Source Card has no written pages
+ 15. orphan_claim       — active claim has no related wiki pages
+ 16. claim_without_source_card — claim source card is missing
+ 17. contradicted_claim_still_active — contradicted claim is still active
 
 LLM checks (audit_agent, not here):
   - factual contradictions
@@ -23,84 +29,11 @@ LLM checks (audit_agent, not here):
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from app.config import Settings
+from app.core.linter_models import LintIssue, LintReport
 from app.core.wiki_fs import WikiFS, WikiPage
-
-# ─────────────────────────────────────────────
-# Result models
-# ─────────────────────────────────────────────
-
-ISSUE_KINDS = {
-    "broken_wikilink",
-    "broken_path_link",
-    "missing_anchor",
-    "orphan_page",
-    "missing_frontmatter",
-    "char_limit",
-    "superseded_active",
-    "stale_page",
-    "duplicate_title",
-    "missing_wikilink",
-    "invalid_provenance",
-    "source_drift",
-    "missing_source",
-    "orphan_source_card",
-    "orphan_claim",
-    "claim_without_source_card",
-    "contradicted_claim_still_active",
-}
-
-
-@dataclass
-class LintIssue:
-    slug: str            # affected page slug
-    line: int            # 0 if not line-specific
-    kind: str            # one of ISSUE_KINDS
-    detail: str          # human-readable description
-    severity: str        # "error" | "warning" | "info"
-    fix_hint: str = ""   # what agent should do to fix
-
-    def __str__(self) -> str:
-        loc = f"{self.slug}:{self.line}" if self.line else self.slug
-        return f"[{self.severity.upper()}] {loc} — {self.detail}"
-
-
-@dataclass
-class LintReport:
-    ran_at: str
-    total_pages: int
-    issues: list[LintIssue] = field(default_factory=list)
-
-    @property
-    def errors(self) -> list[LintIssue]:
-        return [i for i in self.issues if i.severity == "error"]
-
-    @property
-    def warnings(self) -> list[LintIssue]:
-        return [i for i in self.issues if i.severity == "warning"]
-
-    @property
-    def by_kind(self) -> dict[str, list[LintIssue]]:
-        result: dict[str, list[LintIssue]] = {}
-        for issue in self.issues:
-            result.setdefault(issue.kind, []).append(issue)
-        return result
-
-    @property
-    def is_clean(self) -> bool:
-        return len(self.errors) == 0
-
-    def summary(self) -> str:
-        if self.is_clean:
-            return f"✓ Wiki проверена. Страниц: {self.total_pages}."
-        return (
-            f"✗ {len(self.errors)} ошибок, {len(self.warnings)} предупреждений "
-            f"в {self.total_pages} страницах."
-        )
-
 
 # ─────────────────────────────────────────────
 # WikiLinter
@@ -168,15 +101,16 @@ class WikiLinter:
 
     def _check_frontmatter(self, page: WikiPage) -> list[LintIssue]:
         issues = []
-        # supersedes/superseded_by are nullable — validated separately
-        # in _check_superseded_active, not here
         required = {
             "title": str,
             "project": str,
             "type": str,
+            "tags": list,
             "confidence": (int, float),
             "sources": int,
             "last_confirmed": str,
+            "supersedes": (str, type(None)),
+            "superseded_by": (str, type(None)),
             "created": str,
         }
         for field_name, expected_type in required.items():
@@ -193,7 +127,7 @@ class WikiLinter:
                     slug=page.slug, line=0,
                     kind="missing_frontmatter",
                     detail=f"Поле '{field_name}' имеет неверный тип: "
-                           f"ожидался {expected_type.__name__}, "
+                           f"ожидался {_type_name(expected_type)}, "
                            f"получен {type(page.meta[field_name]).__name__}",
                     severity="error",
                     fix_hint=f"Исправьте тип '{field_name}' в frontmatter",
@@ -473,7 +407,6 @@ class WikiLinter:
                             severity="warning",
                             fix_hint=f"Запустите re-ingest для '{card.source_path}'",
                         ))
-                        self.fs.update_source_card_drift(card.source_id, "changed")
                     elif drift["status"] == "missing_source":
                         issues.append(LintIssue(
                             slug=card.slug, line=0,
@@ -483,7 +416,6 @@ class WikiLinter:
                             severity="warning",
                             fix_hint="Удалите Source Card или восстановите raw-файл",
                         ))
-                        self.fs.update_source_card_drift(card.source_id, "missing_source")
 
         # Check for Source Cards without corresponding wiki pages
         for card in cards:
@@ -558,11 +490,7 @@ class WikiLinter:
 # ─────────────────────────────────────────────
 
 
-def _extract_excerpt(content: str, word: str, window: int = 120) -> str:
-    idx = content.lower().find(word.lower())
-    if idx == -1:
-        return content[:window]
-    start = max(0, idx - 40)
-    end = min(len(content), idx + window - 40)
-    excerpt = content[start:end].replace("\n", " ").strip()
-    return f"…{excerpt}…" if start > 0 else f"{excerpt}…"
+def _type_name(expected_type) -> str:
+    if isinstance(expected_type, tuple):
+        return " | ".join(t.__name__ for t in expected_type)
+    return expected_type.__name__

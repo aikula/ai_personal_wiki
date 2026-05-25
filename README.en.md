@@ -28,7 +28,7 @@ Click **📂 Upload** in the header. Select a project and files. The system will
 ### 3. Ask questions
 Type questions in the central chat area. The system finds relevant pages and answers with `[[slug]]` citations.
 
-The **project filter** dropdown (with checkboxes) limits context to selected projects.
+The project filter lives next to the composer input, supports multi-select, limits context to selected projects, and can be cleared in one click.
 
 ### 4. Resolve conflicts
 If contradictions are found between sources, they appear in the **Conflicts** tab (right panel). Resolution workflow:
@@ -54,13 +54,14 @@ Three-zone layout:
 
 ### Left panel — Sessions & Controls
 - **Chat history**: switch sessions, delete (✕)
-- **Header buttons**: 📂 Upload, 🔄 Rebuild, 🔍 Audit, 🗑️ Clear
+- **Header buttons**: 📂 Upload, 🔍 Audit, and a **Manage** menu for rebuild/clear actions
 
 ### Center — Chat workspace
 - Type questions and press Enter
 - **Project filter**: multi-select dropdown
 - **Citations**: `[[slug]]` links — click to open in the right panel
 - **Provenance**: `^[raw/file.md]` markers link to source files
+- In multi-user mode, provenance links and direct raw downloads automatically carry `access_token` so downloads keep working without a separate manual login
 - Session context persists across messages
 
 ### Right panel — Wiki explorer
@@ -117,15 +118,20 @@ The **🔍 Audit** button shows a modal with two sections:
 
 **Structural lint** (`GET /api/audit/lint`): 17 checks without LLM — broken wikilinks, missing frontmatter, char limits, orphan pages, invalid provenance, duplicate titles, etc.
 
-### 8. ReAct query agent
+### 8. Raw files and provenance
+- Pages and chat answers contain provenance markers like `^[raw/path/to/file.md]`
+- In multi-user mode, the UI automatically appends `access_token` to raw links so direct downloads work without a separate login step
+- Raw download endpoint: `GET /api/wiki/raw/{slug}`
+
+### 9. ReAct query agent
 Questions classified (factual/comparison/exploratory/meta). The agent retrieves relevant wiki pages, answers with `[[slug]]` citations, and acknowledges uncertainty.
 
-### 9. Multi-project support
+### 10. Multi-project support
 - Documents organized by project (`eywa-demo`, `aurora-demo`, `_general`)
 - Cross-project pages (in `_general/`) compare approaches without false conflicts
 - Project filter in chat and search
 
-### 10. Wiki cross-links
+### 11. Wiki cross-links
 During ingest, pages auto-linked via `auto_link` (up to 10 candidates per page). Format: `[[slug]]` or `[[slug|display text]]`.
 
 ---
@@ -241,6 +247,7 @@ ollama run qwen2.5:14b
 | `GET` | `/api/wiki/page/{slug}` | Render page |
 | `GET` | `/api/wiki/search` | Full-text search |
 | `GET` | `/api/wiki/projects` | Project list |
+| `GET` | `/api/wiki/raw/{slug}` | Raw markdown for viewing/downloading (`access_token` supported in multi-user) |
 
 ### Conflicts
 | Method | Path | Description |
@@ -321,7 +328,7 @@ wiki-engine/
 │   ├── conflicts.md         # Conflict queue
 │   └── skills.md            # Accumulated rules
 ├── config/settings.yaml     # Configuration
-└── tests/                   # 298 tests (15 files)
+└── tests/                   # pytest suite
 ```
 
 ---
@@ -360,7 +367,7 @@ The Docker container runs as a non-root user (`appuser`, uid 1000).
 ### Tests
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v    # 298 tests: WikiFS, Linter, API, Auth, Interpreter, Sandbox, SafePageUpdates,
+pytest tests/ -v    # pytest suite: WikiFS, Linter, API, Auth, Interpreter, Sandbox, SafePageUpdates,
                     # LargeSourceIngest, TokenBudget, MeteredLLM, Utils, BrowserAuthFlow, Regressions
 ```
 

@@ -12,7 +12,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.agents.audit_agent import AuditAgent
@@ -60,6 +60,7 @@ def get_workspace_context(
     settings: Annotated[Settings, Depends(get_settings)],
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    access_token: str | None = Query(default=None),
 ) -> WorkspaceContext:
     """Resolve workspace context based on app mode.
 
@@ -75,7 +76,7 @@ def get_workspace_context(
 
     # Multi-user: resolve workspace from session token
     store = build_control_store(settings)
-    token = credentials.credentials if credentials else None
+    token = credentials.credentials if credentials else access_token
 
     if not token:
         raise HTTPException(401, "Authentication required")

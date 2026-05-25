@@ -47,7 +47,12 @@ from app.config import Settings
 from app.core.interpreter import CodeInterpreter
 from app.core.llm_client import LLMGateway
 from app.core.token_budget import ContextBudget
-from app.core.utils import extract_wikilinks, now_iso, parse_json_block
+from app.core.utils import (
+    extract_wikilinks,
+    now_iso,
+    parse_json_block,
+    strip_trailing_json_artifact,
+)
 from app.core.wiki_fs import WikiFS, WikiPage
 
 logger = logging.getLogger("wiki.query")
@@ -100,6 +105,7 @@ class QueryAgent:
         else:
             answer, pages_read, iters = self._policy_react(question, session)
 
+        answer = strip_trailing_json_artifact(answer)
         cited = extract_wikilinks(answer)
 
         session.messages.append(ChatMessage(
@@ -132,7 +138,7 @@ class QueryAgent:
     ) -> Generator[str, None, None]:
         if self._is_meta_question(question):
             result = self._handle_meta(question, session)
-            yield result.answer
+            yield strip_trailing_json_artifact(result.answer)
             yield "[DONE]"
             return
 
@@ -162,6 +168,11 @@ class QueryAgent:
                 full_answer += chunk
                 yield chunk
 
+            cleaned_answer = strip_trailing_json_artifact(full_answer)
+            if cleaned_answer != full_answer:
+                yield f"[REPLACE:{json.dumps(cleaned_answer, ensure_ascii=False)}]"
+                full_answer = cleaned_answer
+
             cited = extract_wikilinks(full_answer)
             for slug in cited:
                 yield f"[CITED:{slug}]"
@@ -176,6 +187,7 @@ class QueryAgent:
 
         else:
             answer, _, _ = self._policy_react(question, session)
+            answer = strip_trailing_json_artifact(answer)
             yield answer
             for slug in extract_wikilinks(answer):
                 yield f"[CITED:{slug}]"
@@ -320,13 +332,13 @@ class QueryAgent:
             try:
                 action_data = parse_json_block(raw)
             except ValueError:
-                return raw, pages_read, iteration + 1
+                return strip_trailing_json_artifact(raw), pages_read, iteration + 1
 
             action = action_data.get("action")
             inp = action_data.get("input", {})
 
             if action == "answer":
-                answer = action_data.get("content", "")
+                answer = strip_trailing_json_artifact(action_data.get("content", ""))
                 logger.info("ReAct answered: iterations=%d pages=%d",
                             iteration + 1, len(pages_read))
                 return answer, pages_read, iteration + 1
@@ -403,6 +415,7 @@ class QueryAgent:
             f"Use [[slug]] citations. If not found, say so."
         )
         answer = self.llm.call(system=system, prompt=final_prompt, temperature=0.1)
+        answer = strip_trailing_json_artifact(answer)
         logger.info("ReAct max_iterations: pages=%d", len(pages_read))
         return answer, pages_read, self.max_iterations
 

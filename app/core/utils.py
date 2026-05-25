@@ -32,6 +32,38 @@ def parse_json_block(text: str) -> dict:
     raise ValueError(f"Не удалось найти валидный JSON в ответе LLM: {text[:200]!r}")
 
 
+def strip_trailing_json_artifact(text: str) -> str:
+    """Remove a standalone JSON object/array accidentally appended at the end.
+
+    This is intentionally conservative: it only strips a valid JSON block that
+    starts at a line boundary near the end of the text and leaves the prefix in
+    place.
+    """
+    stripped = text.rstrip()
+    if not stripped:
+        return text
+
+    window_start = max(0, len(stripped) - 4096)
+    tail = stripped[window_start:]
+
+    for match in re.finditer(r"[\{\[]", tail):
+        start = window_start + match.start()
+        if start > 0 and stripped[start - 1] not in "\r\n \t":
+            continue
+
+        candidate = stripped[start:]
+        try:
+            json.loads(candidate)
+        except Exception:
+            continue
+
+        prefix = stripped[:start].rstrip()
+        if prefix:
+            return prefix
+
+    return text
+
+
 def extract_wikilinks(text: str) -> list[str]:
     """
     Extract all [[slug]] and [[slug|text]] references from text.

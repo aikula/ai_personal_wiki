@@ -9,6 +9,7 @@ LLM-powered personal wiki from markdown documents. **No databases. No vector emb
 - **Detect** conflicts between sources and accumulate reusable resolution rules
 - **Query** the wiki via LLM chat with `[[slug]]` citations
 - **Audit** duplicates and overlapping pages
+- **Open raw source files** via provenance links and the `/api/wiki/raw/{slug}` endpoint
 
 > **Inspired by** [Andrej Karpathy's llm-wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)
 
@@ -23,6 +24,8 @@ uvicorn app.api.main:app --reload --port 8000
 Open http://localhost:8000 → 📂 Upload → Ask questions → Resolve conflicts → 🔍 Audit
 
 The app reads `.env` on startup and warns in logs if the LLM connection is not configured or cannot be reached.
+
+In multi-user mode, raw provenance links carry `access_token` automatically so direct downloads work from the UI without a separate login step.
 
 Docker: `docker compose up --build` (container runs as non-root `appuser`).
 

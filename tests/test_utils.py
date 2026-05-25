@@ -3,8 +3,10 @@ import pytest
 from app.core.utils import (
     auto_link,
     extract_wikilinks,
+    normalize_wikilinks,
     now_iso,
     parse_json_block,
+    strip_trailing_json_artifact,
     validate_raw_filename,
     validate_slug,
 )
@@ -35,6 +37,19 @@ class TestParseJsonBlock:
     def test_invalid_raises(self):
         with pytest.raises(ValueError):
             parse_json_block("not json at all")
+
+
+class TestStripTrailingJsonArtifact:
+    def test_strips_json_object_at_end(self):
+        text = (
+            "На основе страницы даю ответ.\n\n"
+            "{\"action\": \"answer\", \"content\": \"ok\"}"
+        )
+        assert strip_trailing_json_artifact(text) == "На основе страницы даю ответ."
+
+    def test_keeps_plain_text(self):
+        text = "Обычный ответ без JSON."
+        assert strip_trailing_json_artifact(text) == text
 
 
 class TestExtractWikilinks:
@@ -156,3 +171,17 @@ class TestAutoLink:
         candidates = [self._candidate("myapp", "App", ["App"])]
         result = auto_link(content, candidates)
         assert "[[myapp|App]]" not in result  # App is only 3 chars
+
+
+class TestNormalizeWikilinks:
+    def test_adds_raw_prefix_to_provenance_marker(self):
+        result = normalize_wikilinks("Fact ^[proj/source.md]")
+        assert result == "Fact ^[raw/proj/source.md]"
+
+    def test_removes_nested_wikilink_from_provenance_marker(self):
+        result = normalize_wikilinks("Fact ^[raw/proj/[[docs/source|Source File]].pdf]")
+        assert result == "Fact ^[raw/proj/Source File.pdf]"
+
+    def test_unlinks_invalid_wikilink_slug_when_existing_slugs_known(self):
+        result = normalize_wikilinks("[[_general/Уточненное описание]]", {"_general/index"})
+        assert result == "_general/Уточненное описание"

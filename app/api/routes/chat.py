@@ -48,6 +48,7 @@ async def chat(
 
     SSE event types:
       data: {"type": "chunk", "content": "text fragment"}
+      data: {"type": "replace", "content": "cleaned final answer"}
       data: {"type": "cited", "slug": "myapp/storage/redis"}
       data: {"type": "meta", "question_type": "factual", "pages_read": [...]}
       data: {"type": "done"}
@@ -78,6 +79,9 @@ async def chat(
                         if chunk.startswith("[CITED:") and chunk.endswith("]"):
                             slug = chunk[7:-1]
                             queue.put_nowait({"type": "cited", "slug": slug})
+                        elif chunk.startswith("[REPLACE:") and chunk.endswith("]"):
+                            content = json.loads(chunk[9:-1])
+                            queue.put_nowait({"type": "replace", "content": content})
                         elif chunk == "[DONE]":
                             queue.put_nowait({"type": "done"})
                         else:

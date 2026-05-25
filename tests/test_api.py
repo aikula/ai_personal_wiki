@@ -1,4 +1,5 @@
 from base64 import b64encode
+from types import SimpleNamespace
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -92,6 +93,49 @@ async def test_wiki_page_rejects_invalid_slug(client):
 
 
 @pytest.mark.asyncio
+async def test_raw_page_accepts_access_token_query(client, test_settings, monkeypatch, tmp_path):
+    from app.core.wiki_fs import WikiFS
+
+    test_settings.app_mode = "multi_user"
+    test_settings.wiki_data_path = str(tmp_path)
+
+    fs = WikiFS(test_settings)
+    fs.write_page(
+        "_general/raw-test",
+        meta={
+            "title": "Raw Test",
+            "project": "_general",
+            "type": "entity",
+            "tags": [],
+            "confidence": 1.0,
+            "sources": 1,
+            "last_confirmed": "2026-05-25",
+            "supersedes": None,
+            "superseded_by": None,
+            "created": "2026-05-25",
+        },
+        content="Raw content",
+    )
+
+    class FakeStore:
+        def get_user_by_session_token(self, token):
+            return SimpleNamespace(id="user-1") if token == "token-123" else None
+
+        def get_default_workspace(self, user_id):
+            return SimpleNamespace(id="ws-1", root_path=str(tmp_path))
+
+    monkeypatch.setattr("app.api.dependencies.build_control_store", lambda settings: FakeStore())
+
+    unauthorized = await client.get("/api/wiki/raw/_general/raw-test")
+    assert unauthorized.status_code == 401
+
+    resp = await client.get("/api/wiki/raw/_general/raw-test?access_token=token-123")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["raw"].startswith("---")
+
+
+@pytest.mark.asyncio
 async def test_search_no_query_returns_422(client):
     resp = await client.get("/api/wiki/search")
     assert resp.status_code == 422
@@ -159,6 +203,26 @@ async def test_metrics_endpoint(client):
     data = resp.json()
     assert "total_pages" in data
     assert "orphan_count" in data
+
+
+@pytest.mark.asyncio
+async def test_audit_lint_returns_string_items(client, test_settings):
+    from app.core.wiki_fs import WikiFS
+
+    fs = WikiFS(test_settings)
+    fs.write_page("lint/source", meta={
+        "title": "Lint Source", "project": "_general", "type": "entity",
+        "tags": [], "confidence": 1.0, "sources": 1,
+        "last_confirmed": "2026-05-25", "supersedes": None,
+        "superseded_by": None, "created": "2026-05-25",
+    }, content="See [[missing/page]]")
+
+    resp = await client.get("/api/audit/lint")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data["by_kind"]["broken_wikilink"][0], str)
+    assert "[ERROR] lint/source:1" in data["by_kind"]["broken_wikilink"][0]
 
 
 @pytest.mark.asyncio

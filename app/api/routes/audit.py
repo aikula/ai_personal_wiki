@@ -45,7 +45,7 @@ async def get_lint(
         "errors": len(report.errors),
         "warnings": len(report.warnings),
         "is_clean": report.is_clean,
-        "by_kind": report.by_kind,
+        "by_kind": {kind: [str(i) for i in items] for kind, items in report.by_kind.items()},
         "issues": [str(i) for i in report.issues],
     }
 
