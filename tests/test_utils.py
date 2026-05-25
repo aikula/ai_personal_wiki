@@ -124,6 +124,13 @@ class TestValidateSlug:
         with pytest.raises(ValueError, match="недопустимые символы"):
             validate_slug("my app/page")
 
+    def test_cyrillic_slug_passes(self):
+        """Unicode letters (Cyrillic) are allowed in slugs."""
+        validate_slug("проект/тест")
+
+    def test_mixed_unicode_slug_passes(self):
+        validate_slug("myapp/описание-v2")
+
 
 class TestValidateRawFilename:
     def test_allows_double_dot_in_name_before_extension(self):
@@ -185,3 +192,15 @@ class TestNormalizeWikilinks:
     def test_unlinks_invalid_wikilink_slug_when_existing_slugs_known(self):
         result = normalize_wikilinks("[[_general/Уточненное описание]]", {"_general/index"})
         assert result == "_general/Уточненное описание"
+
+    def test_keeps_unicode_slug_when_exists(self):
+        """Unicode letters are valid in slugs since slugify/validate_slug support them."""
+        existing = {"_general/уточнение"}
+        result = normalize_wikilinks("[[_general/уточнение]]", existing)
+        assert result == "[[_general/уточнение]]"
+
+    def test_unlinks_cyrillic_slug_when_project_unknown(self):
+        """If first segment is not a known project, slug should be unlinked."""
+        existing = {"_general/index", "myapp/page"}
+        result = normalize_wikilinks("[[неизвестный/тест]]", existing)
+        assert result == "неизвестный/тест"
