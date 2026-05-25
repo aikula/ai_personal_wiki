@@ -247,7 +247,7 @@ ollama run qwen2.5:14b
 | `GET` | `/api/wiki/page/{slug}` | Render page |
 | `GET` | `/api/wiki/search` | Full-text search |
 | `GET` | `/api/wiki/projects` | Project list |
-| `GET` | `/api/wiki/raw/{slug}` | Raw markdown for viewing/downloading (`access_token` supported in multi-user) |
+| `GET` | `/api/wiki/raw/{path}` | Raw source file for viewing/downloading (`access_token` supported in multi-user) |
 
 ### Conflicts
 | Method | Path | Description |

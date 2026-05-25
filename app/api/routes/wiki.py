@@ -10,9 +10,11 @@ GET  /api/wiki/raw/{slug}    — raw markdown (for edit view)
 from __future__ import annotations
 
 from typing import Annotated
+from pathlib import Path
 
 import markdown  # pip install markdown
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 
 from app.api.dependencies import WikiFS, get_wiki_fs
 from app.api.models import (
@@ -117,17 +119,34 @@ async def get_raw_markdown(
     slug: str,
     fs: Annotated[WikiFS, Depends(get_wiki_fs)],
 ):
-    """Return raw markdown including frontmatter. Used by edit view."""
-    # Strip anchor if present in slug from frontend
-    clean_slug = slug.split("#")[0]
+    """Return a raw source file download or wiki page markdown.
+
+    Provenance links use raw source paths under ``raw/``. For backwards
+    compatibility, wiki page slugs still return JSON with the page markdown.
+    """
+    clean_path = slug.split("#")[0]
+
+    raw_relative = clean_path[4:] if clean_path.startswith("raw/") else clean_path
+    if raw_relative:
+        raw_path = _resolve_raw_path(fs.raw_dir, raw_relative)
+        if raw_path is not None:
+            return FileResponse(
+                path=str(raw_path),
+                filename=raw_path.name,
+                media_type="application/octet-stream",
+            )
+        if clean_path.startswith("raw/"):
+            raise HTTPException(404, f"Raw file not found: {clean_path}")
+
     try:
-        validate_slug(clean_slug)
+        validate_slug(clean_path)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    page = fs.read_page(clean_slug)
+
+    page = fs.read_page(clean_path)
     if page is None:
-        raise HTTPException(404, f"Страница не найдена: {clean_slug}")
-    return {"slug": slug, "raw": page.raw}
+        raise HTTPException(404, f"Страница не найдена: {clean_path}")
+    return {"slug": clean_path, "raw": page.raw}
 
 
 # ── HTML rendering helper ────────────────────────────────────────
@@ -189,3 +208,13 @@ def _render_page_html(content: str, current_slug: str) -> str:
     # Reset and convert
     _MD.reset()
     return _MD.convert(processed)
+
+
+def _resolve_raw_path(raw_dir: Path, relative_path: str) -> Path | None:
+    candidate = (raw_dir / relative_path).resolve()
+    raw_root = raw_dir.resolve()
+    if raw_root != candidate and raw_root not in candidate.parents:
+        raise HTTPException(400, f"Path escapes raw directory: {relative_path}")
+    if candidate.exists() and candidate.is_file():
+        return candidate
+    return None

@@ -249,7 +249,7 @@ ollama run qwen2.5:14b
 | `GET` | `/api/wiki/page/{slug}` | Отрендерить страницу |
 | `GET` | `/api/wiki/search` | Полнотекстовый поиск |
 | `GET` | `/api/wiki/projects` | Список проектов |
-| `GET` | `/api/wiki/raw/{slug}` | Raw markdown для просмотра/скачивания (`access_token` поддерживается в multi-user) |
+| `GET` | `/api/wiki/raw/{path}` | Исходный файл из `raw/` для просмотра/скачивания (`access_token` поддерживается в multi-user) |
 
 ### Conflicts
 | Метод | Путь | Описание |

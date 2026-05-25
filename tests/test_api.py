@@ -93,28 +93,18 @@ async def test_wiki_page_rejects_invalid_slug(client):
 
 
 @pytest.mark.asyncio
-async def test_raw_page_accepts_access_token_query(client, test_settings, monkeypatch, tmp_path):
-    from app.core.wiki_fs import WikiFS
+async def test_raw_file_accepts_access_token_query(client, test_settings, monkeypatch, tmp_path):
+    from app.core.raw_sources import save_raw_file_bytes
 
     test_settings.app_mode = "multi_user"
     test_settings.wiki_data_path = str(tmp_path)
 
-    fs = WikiFS(test_settings)
-    fs.write_page(
-        "_general/raw-test",
-        meta={
-            "title": "Raw Test",
-            "project": "_general",
-            "type": "entity",
-            "tags": [],
-            "confidence": 1.0,
-            "sources": 1,
-            "last_confirmed": "2026-05-25",
-            "supersedes": None,
-            "superseded_by": None,
-            "created": "2026-05-25",
-        },
-        content="Raw content",
+    save_raw_file_bytes(
+        raw_dir=tmp_path / "raw",
+        state_dir=tmp_path / "state",
+        project="_general",
+        filename="нейропитч‑шоу. Битва стратегий_ стартап, капитал, алгоритм_Ражев.pdf",
+        content=b"%PDF-1.4\n%test\n",
     )
 
     class FakeStore:
@@ -126,13 +116,15 @@ async def test_raw_page_accepts_access_token_query(client, test_settings, monkey
 
     monkeypatch.setattr("app.api.dependencies.build_control_store", lambda settings: FakeStore())
 
-    unauthorized = await client.get("/api/wiki/raw/_general/raw-test")
+    unauthorized = await client.get("/api/wiki/raw/_general/%D0%BD%D0%B5%D0%B9%D1%80%D0%BE%D0%BF%D0%B8%D1%82%D1%87%E2%80%91%D1%88%D0%BE%D1%83.%20%D0%91%D0%B8%D1%82%D0%B2%D0%B0%20%D1%81%D1%82%D1%80%D0%B0%D1%82%D0%B5%D0%B3%D0%B8%D0%B9_%20%D1%81%D1%82%D0%B0%D1%80%D1%82%D0%B0%D0%BF,%20%D0%BA%D0%B0%D0%BF%D0%B8%D1%82%D0%B0%D0%BB,%20%D0%B0%D0%BB%D0%B3%D0%BE%D1%80%D0%B8%D1%82%D0%BC_%D0%A0%D0%B0%D0%B6%D0%B5%D0%B2.pdf")
     assert unauthorized.status_code == 401
 
-    resp = await client.get("/api/wiki/raw/_general/raw-test?access_token=token-123")
+    resp = await client.get(
+        "/api/wiki/raw/_general/%D0%BD%D0%B5%D0%B9%D1%80%D0%BE%D0%BF%D0%B8%D1%82%D1%87%E2%80%91%D1%88%D0%BE%D1%83.%20%D0%91%D0%B8%D1%82%D0%B2%D0%B0%20%D1%81%D1%82%D1%80%D0%B0%D1%82%D0%B5%D0%B3%D0%B8%D0%B9_%20%D1%81%D1%82%D0%B0%D1%80%D1%82%D0%B0%D0%BF,%20%D0%BA%D0%B0%D0%BF%D0%B8%D1%82%D0%B0%D0%BB,%20%D0%B0%D0%BB%D0%B3%D0%BE%D1%80%D0%B8%D1%82%D0%BC_%D0%A0%D0%B0%D0%B6%D0%B5%D0%B2.pdf?access_token=token-123"
+    )
     assert resp.status_code == 200
-    data = resp.json()
-    assert data["raw"].startswith("---")
+    assert resp.content.startswith(b"%PDF-1.4")
+    assert "attachment" in resp.headers["content-disposition"]
 
 
 @pytest.mark.asyncio
