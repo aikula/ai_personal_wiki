@@ -106,13 +106,16 @@ Conflict Resolution Patterns:
 ### 6. Structural linting
 Runs automatically after each ingest. Checks: broken wikilinks, orphan pages, duplicate titles, stale pages, char limits, missing frontmatter, invalid provenance.
 
-### 7. Duplicate & overlap audit
-**🔍 Audit** button (`GET /api/audit/duplicates`) runs detection:
+### 7. Duplicate, overlap & structural audit
+
+The **🔍 Audit** button shows a modal with two sections:
+
+**Overlaps/Duplicates** (`GET /api/audit/duplicates`):
 - **Duplicates** (score ≥ 0.9): same title in same project
 - **Overlaps** (score ≥ 0.6): shared wikilinks within same project
 - **Tags** (score ≥ 0.5): 3+ shared tags in same project
 
-No LLM — purely structural analysis.
+**Structural lint** (`GET /api/audit/lint`): 17 checks without LLM — broken wikilinks, missing frontmatter, char limits, orphan pages, invalid provenance, duplicate titles, etc.
 
 ### 8. ReAct query agent
 Questions classified (factual/comparison/exploratory/meta). The agent retrieves relevant wiki pages, answers with `[[slug]]` citations, and acknowledges uncertainty.
@@ -252,6 +255,7 @@ ollama run qwen2.5:14b
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/audit/duplicates` | Find duplicates and overlaps |
+| `GET` | `/api/audit/lint` | Full structural lint (17 checks) |
 | `GET` | `/api/audit/synthesis` | List merge candidates |
 | `POST` | `/api/audit/synthesis` | Run synthesis |
 | `POST` | `/api/audit/synthesis/{cid}/resolve` | Apply merge |
