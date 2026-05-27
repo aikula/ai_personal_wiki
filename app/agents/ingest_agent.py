@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from datetime import date, datetime
 
 from app.agents.ingest_helpers import (
@@ -37,6 +38,7 @@ from app.core.large_source_ingest import (
 )
 from app.core.linter import WikiLinter
 from app.core.llm_client import LLMGateway
+from app.core.metered_llm_client import QuotaExceededError
 from app.core.raw_sources import (
     RawSourceError,
     list_raw_source_files,
@@ -76,7 +78,7 @@ class IngestAgent:
         self.settings = settings
         self.budget = ContextBudget(settings)
 
-    def run(self, raw_relative_path: str, allow_draft: bool = True) -> IngestResult:
+    def run(self, raw_relative_path: str, allow_draft: bool = True, cancel_event: threading.Event | None = None) -> IngestResult:
         try:
             source_content = read_raw_source_file(self.fs.raw_dir, raw_relative_path)
         except RawSourceError as exc:
@@ -113,6 +115,7 @@ class IngestAgent:
                 project=project,
                 source_content=source_content,
                 allow_draft=allow_draft,
+                cancel_event=cancel_event,
             )
 
         try:
@@ -453,6 +456,7 @@ print(json.dumps(result))
         project: str,
         source_content: str,
         allow_draft: bool = True,
+        cancel_event: threading.Event | None = None,
     ) -> IngestResult:
         """
         Process a large source document through chunked ingest pipeline.
@@ -504,7 +508,13 @@ print(json.dumps(result))
 
         # Step 3: Analyze each chunk
         chunk_results: list[ChunkAnalysisResult] = []
+        quota_exhausted = False
+        cancelled = False
         for chunk in chunks:
+            if cancel_event and cancel_event.is_set():
+                logger.warning("Ingest cancelled at chunk %s/%s. Saving partial results.", chunk.chunk_id, len(chunks))
+                cancelled = True
+                break
             try:
                 result = self._analyze_chunk(
                     chunk=chunk,
@@ -512,6 +522,19 @@ print(json.dumps(result))
                     project=project,
                 )
                 chunk_results.append(result)
+            except QuotaExceededError:
+                logger.warning(
+                    "Quota exceeded at chunk %s/%s. Saving partial results from %d processed chunks.",
+                    chunk.chunk_id, len(chunks), len(chunk_results),
+                )
+                chunk_results.append(ChunkAnalysisResult(
+                    chunk_id=chunk.chunk_id,
+                    source_id=source_id,
+                    section_path=chunk.section_path,
+                    outcome="failed",
+                ))
+                quota_exhausted = True
+                break
             except Exception as exc:
                 logger.error("Chunk analysis failed: chunk_id=%s error=%s", chunk.chunk_id, exc)
                 chunk_results.append(ChunkAnalysisResult(
@@ -543,6 +566,10 @@ print(json.dumps(result))
         card.pages_written = pages_created + pages_updated
         card.conflicts_opened = conflict_ids
         card.claims_files = claims_files
+        if quota_exhausted:
+            card.ingest_status = "partial"
+        elif cancelled:
+            card.ingest_status = "cancelled"
         self.fs.write_source_card(card)
 
         # Step 7: Log and lint
@@ -567,6 +594,20 @@ print(json.dumps(result))
             linter = WikiLinter(self.fs, self.settings)
             lint_report = linter.lint(slugs=pages_created + pages_updated)
 
+        analysis_notes = merged.triage_report
+        if quota_exhausted:
+            processed = len(chunk_results) - 1  # exclude the failed last chunk
+            analysis_notes = (
+                f"PARTIAL INGEST: quota exhausted after {processed}/{len(chunks)} chunks. "
+                f"Results saved for processed chunks. " + (analysis_notes or "")
+            )
+        elif cancelled:
+            processed = len(chunk_results)
+            analysis_notes = (
+                f"CANCELLED: stopped after {processed}/{len(chunks)} chunks. "
+                f"Partial results saved. " + (analysis_notes or "")
+            )
+
         return IngestResult(
             success=True,
             source_file=raw_relative_path,
@@ -577,7 +618,7 @@ print(json.dumps(result))
             conflict_ids=conflict_ids,
             skills_triggered=[],
             lint_report=lint_report,
-            analysis_notes=merged.triage_report,
+            analysis_notes=analysis_notes,
         )
 
     def _analyze_chunk(

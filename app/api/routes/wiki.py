@@ -9,8 +9,8 @@ GET  /api/wiki/raw/{slug}    — raw markdown (for edit view)
 
 from __future__ import annotations
 
-from typing import Annotated
 from pathlib import Path
+from typing import Annotated
 
 import markdown  # pip install markdown
 from fastapi import APIRouter, Depends, HTTPException, Query

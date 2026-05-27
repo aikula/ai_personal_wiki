@@ -1,0 +1,1 @@
+/root/ai_personal_wiki/AGENTS.md

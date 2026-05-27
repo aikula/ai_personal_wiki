@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
+import uuid
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
@@ -23,6 +25,9 @@ from app.core.utils import validate_project_name, validate_raw_filename
 
 logger = logging.getLogger("wiki.api.ingest")
 router = APIRouter(prefix="/api/ingest", tags=["ingest"])
+
+# ── Ingest job tracking ──────────────────────────────────────────────
+_active_jobs: dict[str, threading.Event] = {}
 
 
 def _allowed_ext_text() -> str:
@@ -102,8 +107,15 @@ async def _save_and_ingest(project: str, source_file, agent: IngestAgent, fs: Wi
         )
 
     save_raw_file_bytes(fs.raw_dir, fs.state_dir, project, filename, content)
-    result = agent.run(raw_path)
-    return _to_response(result)
+
+    job_id = str(uuid.uuid4())[:8]
+    cancel_event = threading.Event()
+    _active_jobs[job_id] = cancel_event
+    try:
+        result = await asyncio.to_thread(agent.run, raw_path, cancel_event=cancel_event)
+        return _to_response(result)
+    finally:
+        _active_jobs.pop(job_id, None)
 
 
 @router.post("", response_model=IngestFileResponse)
@@ -175,6 +187,15 @@ async def list_raw_files(
         ],
         "total": len(files),
     }
+
+
+@router.post("/cancel")
+async def cancel_ingest():
+    active = list(_active_jobs.keys())
+    for job_id, event in _active_jobs.items():
+        event.set()
+        logger.info("Ingest cancel requested: job_id=%s", job_id)
+    return {"cancelled": len(active), "job_ids": active}
 
 
 @router.post("/rebuild")

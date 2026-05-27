@@ -1,5 +1,6 @@
 from base64 import b64encode
 from types import SimpleNamespace
+import os
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -18,6 +19,16 @@ from app.config import Settings
 def test_settings(monkeypatch, tmp_path):
     s = Settings()
     s.wiki_data_path = str(tmp_path)
+    # Pick up LLM env vars so dependency injection can create LLMClient
+    api_key = os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
+    if api_key:
+        s.llm.api_key = api_key
+    base_url = os.environ.get("LLM_BASE_URL", "")
+    if base_url:
+        s.llm.base_url = base_url
+    model = os.environ.get("LLM_MODEL", "")
+    if model:
+        s.llm.model = model
     # Make Settings.load return our test settings (accepts any args for classmethod compatibility)
     monkeypatch.setattr("app.config.Settings.load", lambda *a: s)
     from app.api.dependencies import get_settings
