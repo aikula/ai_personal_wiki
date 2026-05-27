@@ -209,6 +209,7 @@ async def rebuild_wiki(
     async def event_stream() -> AsyncGenerator[str, None]:
         queue: asyncio.Queue = asyncio.Queue()
         loop = asyncio.get_running_loop()
+        done = False
 
         def push_event(event: dict | None) -> None:
             loop.call_soon_threadsafe(queue.put_nowait, event)
@@ -226,12 +227,23 @@ async def rebuild_wiki(
             finally:
                 push_event(None)
 
+        async def heartbeat():
+            while not done:
+                await asyncio.sleep(30)
+                if not done:
+                    push_event({"status": "alive"})
+
+        hb = asyncio.create_task(heartbeat())
         thread = loop.run_in_executor(None, run_rebuild)
-        while True:
-            event = await asyncio.wait_for(queue.get(), timeout=120)
-            if event is None:
-                break
-            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        try:
+            while True:
+                event = await queue.get()
+                if event is None:
+                    break
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        finally:
+            done = True
+            hb.cancel()
         await thread
 
     return StreamingResponse(
