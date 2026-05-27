@@ -476,7 +476,7 @@ print(json.dumps(result))
 
         # Step 1: Create/update Source Card
         existing_card = self.fs.read_source_card(source_id)
-        outline = parse_outline(source_content, raw_relative_path)
+        outline = parse_outline(source_content, raw_relative_path, target_chars=self.settings.ingest.chunk_target_chars)
 
         card = SourceCard(
             source_id=source_id,

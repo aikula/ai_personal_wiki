@@ -68,7 +68,7 @@ class MergeAnalysisResult:
     triage_report: str = ""
     page_write_plan: list[dict] = field(default_factory=list)
 
-def parse_outline(source_content: str, source_path: str = "") -> DocumentOutline:
+def parse_outline(source_content: str, source_path: str = "", target_chars: int = 16000) -> DocumentOutline:
     """
     Parse a document outline using fallback order:
     1. Markdown headings (#, ##, ###, ...)
@@ -86,8 +86,8 @@ def parse_outline(source_content: str, source_path: str = "") -> DocumentOutline
             items=items,
         )
 
-    # Fallback: paragraph groups
-    items = _parse_paragraph_groups(source_content)
+    # Fallback: paragraph groups sized to target_chars
+    items = _parse_paragraph_groups(source_content, min_chars=target_chars)
     if items:
         return DocumentOutline(
             source_path=source_path,
@@ -144,34 +144,52 @@ def _parse_markdown_headings(content: str) -> list[OutlineItem]:
 
 
 def _parse_paragraph_groups(content: str, min_chars: int = 200) -> list[OutlineItem]:
+    """Group consecutive paragraphs into outline sections of ~min_chars."""
     paragraphs = re.split(r"\n\n+", content)
-    items = []
-    pos = 0
+    paragraphs = [p.strip() for p in paragraphs if p.strip()]
 
+    if not paragraphs:
+        return []
+
+    # Find actual positions in source content
+    para_positions: list[tuple[str, int, int]] = []
+    search_start = 0
     for para in paragraphs:
-        para = para.strip()
-        if not para:
-            pos += len(para) + 2
-            continue
-
-        start = content.find(para, pos)
+        start = content.find(para, search_start)
         if start == -1:
-            start = pos
+            start = search_start
         end = start + len(para)
+        para_positions.append((para, start, end))
+        search_start = end
 
-        first_sentence = para.split(".")[0][:80]
-        title = first_sentence if first_sentence else f"Section at char {start}"
+    items = []
+    group_paras: list[tuple[str, int, int]] = []
+    group_chars = 0
 
+    def flush_group():
+        if not group_paras:
+            return
+        text = "\n\n".join(p for p, _, _ in group_paras)
+        first_sentence = group_paras[0][0].split(".")[0][:80]
+        title = first_sentence if first_sentence else f"Section at char {group_paras[0][1]}"
         items.append(OutlineItem(
             text=title,
             level=2,
-            start_pos=start,
-            end_pos=end,
-            char_count=len(para),
-            preview=para[:200].replace("\n", " "),
+            start_pos=group_paras[0][1],
+            end_pos=group_paras[-1][2],
+            char_count=group_chars,
+            preview=text[:200].replace("\n", " "),
         ))
-        pos = end
 
+    for para, start, end in para_positions:
+        if group_chars + len(para) > min_chars * 2 and group_chars >= min_chars:
+            flush_group()
+            group_paras = []
+            group_chars = 0
+        group_paras.append((para, start, end))
+        group_chars += len(para)
+
+    flush_group()
     return items
 
 def chunk_by_outline(
