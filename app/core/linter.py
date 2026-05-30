@@ -19,6 +19,7 @@ Checks (all in-process, no LLM, no writes):
  15. orphan_claim       — active claim has no related wiki pages
  16. claim_without_source_card — claim source card is missing
  17. contradicted_claim_still_active — contradicted claim is still active
+ 18. planned_page_not_created — Source Card lists planned page that was never written
 
 LLM checks (audit_agent, not here):
   - factual contradictions
@@ -90,6 +91,7 @@ class WikiLinter:
         issues += self._check_duplicate_titles(target_pages)
         issues += self._check_source_drift()
         issues += self._check_claims()
+        issues += self._check_planned_pages()
 
         return LintReport(
             ran_at=datetime.now().isoformat(timespec="seconds"),
@@ -472,6 +474,28 @@ class WikiLinter:
                     fix_hint="Измените статус claim на 'contradicted' или 'unresolved'",
                 ))
 
+        return issues
+
+    def _check_planned_pages(self) -> list[LintIssue]:
+        """Flag pages that Source Cards planned but never created."""
+        issues = []
+        cards = self.fs.list_source_cards()
+        for card in cards:
+            if not card.pages_planned:
+                continue
+            planned_set = set(card.pages_planned)
+            written_set = set(card.pages_written or [])
+            missing = planned_set - written_set
+            if not missing:
+                continue
+            issues.append(LintIssue(
+                slug=card.slug, line=0,
+                kind="planned_page_not_created",
+                detail=f"Source Card '{card.source_id}': "
+                       f"{len(missing)} of {len(planned_set)} planned pages not created",
+                severity="warning",
+                fix_hint=f"Re-ingest '{card.source_path}' or increase max_auto_write_pages",
+            ))
         return issues
 
     def _build_incoming_links(self) -> None:

@@ -306,8 +306,17 @@ print(json.dumps(result))
                     else:
                         pages_updated.append(planned.slug)
                 except Exception as exc:
-                    logger.warning("Step2 write failed: slug=%s action=%s error=%s", planned.slug, action, exc)
-                    self._log_failed_ingest(analysis)
+                    exc_name = type(exc).__name__
+                    if "CharLimitExceeded" in exc_name:
+                        logger.warning("Step2 %s exceeded char limit, retrying with compact prompt", planned.slug)
+                        retry_ok = self._retry_compact_page(
+                            planned, system, agents_md, skills, today, analysis, action,
+                            pages_created, pages_updated,
+                        )
+                        if not retry_ok:
+                            logger.error("Step2 retry also failed for %s", planned.slug)
+                    else:
+                        logger.warning("Step2 write failed: slug=%s action=%s error=%s", planned.slug, action, exc)
                 continue
             pending_updates.append({"slug": planned.slug, "content": render_page_raw(meta, content), "action": action})
         if pending_updates:
@@ -328,11 +337,42 @@ print(json.dumps(result))
                 pages_updated.append(u["slug"])
         return pages_created, pages_updated, pages_superseded
 
+    def _retry_compact_page(self, planned, system, agents_md, skills, today,
+                            analysis, action, pages_created, pages_updated):
+        """Retry page generation with a compact prompt asking for shorter output."""
+        compact_prompt = STEP2_PROMPT.format(
+            planned_page_json=f'{{"slug": "{planned.slug}", "action": "{action}"}}',
+            source_file=analysis.source_file,
+            source_sections="(compacted — produce concise output)",
+            existing_content="",
+            link_candidates="",
+            today=today,
+            confidence=planned.confidence,
+            sources_count=1,
+            char_limit=self.settings.limits.entity_page_chars,
+        ) + "\n\nIMPORTANT: Keep the content VERY concise. Under 2500 chars of body text. No long explanations."
+        try:
+            raw = self.llm.call(system=system, prompt=compact_prompt, temperature=0.0, json_mode=True, max_tokens=3000)
+            page_data = parse_json_response(raw, context=f"Step2 compact retry {planned.slug}")
+            meta = page_data.get("meta", {})
+            content = page_data.get("content", "")
+            if not meta.get("created"):
+                meta["created"] = today
+            meta["project"] = planned.slug.split("/")[0] if "/" in planned.slug else analysis.project
+            self.fs.write_page(slug=planned.slug, meta=meta, content=content, allow_overwrite=True)
+            if action == "create":
+                pages_created.append(planned.slug)
+            else:
+                pages_updated.append(planned.slug)
+            return True
+        except Exception:
+            return False
+
     def _format_source_sections(self, sections: list[str], max_chars: int | None = None) -> str:
         """Fit relevant source fragments into Step 2 without falling back to full-source prefix."""
         if not sections:
             return "(no source sections assigned)"
-        limit = max_chars or min(self.settings.query.context_budget_chars, 16_000)
+        limit = max_chars or min(self.settings.query.context_budget_chars, 24_000)
         parts = []
         used = 0
         for section in sections:
@@ -592,7 +632,9 @@ print(json.dumps(result))
         lint_report = None
         if self.settings.ingest.auto_lint_after_ingest:
             linter = WikiLinter(self.fs, self.settings)
-            lint_report = linter.lint(slugs=pages_created + pages_updated)
+            lint_report = linter.lint(
+                slugs=pages_created + pages_updated + claims_files
+            )
 
         analysis_notes = merged.triage_report
         if quota_exhausted:
@@ -819,7 +861,31 @@ print(json.dumps(result))
                 else:
                     pages_updated.append(slug)
             except Exception as exc:
-                logger.error("Failed to generate page %s: %s", slug, exc)
+                exc_name = type(exc).__name__
+                if "CharLimitExceeded" in exc_name:
+                    logger.warning("Page %s exceeded char limit, retrying compact", slug)
+                    try:
+                        compact_meta, compact_content = self._generate_single_page(
+                            slug=slug,
+                            project=project,
+                            source_sections=page_info.get("source_sections", [])[:1],
+                            source_file=merged.source_path,
+                            existing_content="",
+                            action=action,
+                            force_char_limit=self.settings.limits.entity_page_chars,
+                        )
+                        if require_review:
+                            pending_draft[slug] = render_page_raw(compact_meta, compact_content)
+                        else:
+                            self.fs.write_page(slug=slug, meta=compact_meta, content=compact_content, allow_overwrite=True)
+                            if action == "create":
+                                pages_created.append(slug)
+                            else:
+                                pages_updated.append(slug)
+                    except Exception as retry_exc:
+                        logger.error("Compact retry also failed for %s: %s", slug, retry_exc)
+                else:
+                    logger.error("Failed to generate page %s: %s", slug, exc)
 
         if require_review and pending_draft:
             draft_id = f"large-ingest-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
@@ -852,6 +918,7 @@ print(json.dumps(result))
         source_file: str,
         existing_content: str,
         action: str,
+        force_char_limit: int | None = None,
     ) -> tuple[dict, str]:
         """Generate a single wiki page from source content."""
         from app.agents.ingest_helpers import (
@@ -863,7 +930,7 @@ print(json.dumps(result))
         skills = self.fs.read_skills()
         agents_md = self._read_agents_md()
         today = date.today().isoformat()
-        char_limit = self._char_limit_for_type("entity")
+        char_limit = force_char_limit or self._char_limit_for_type("entity")
 
         # Build a minimal planned page dict for the prompt
         planned_page = {

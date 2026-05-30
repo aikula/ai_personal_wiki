@@ -29,9 +29,9 @@ limits:
   agents_md_chars:    4200
   skills_md_chars:    8750
   index_l0_chars:     10500
-  index_l1_chars:     5250
-  entity_page_chars:  3500
-  concept_page_chars: 5250
+  index_l1_chars:     10000
+  entity_page_chars:  8000
+  concept_page_chars: 10000
   log_md_chars:       3500
   conflicts_md_chars: 35000
 
@@ -41,13 +41,13 @@ ingest:
   auto_lint_after_ingest: true
   conflict_continue_on_detect: true
   # Large source ingest (Phase 2)
-  large_source_threshold_chars: 100000
+  large_source_threshold_chars: 25000
   chunk_min_chars: 8000
   chunk_target_chars: 16000
   chunk_max_chars: 25000
   max_pages_per_batch: 10
-  max_auto_write_pages: 15
-  require_review_if_pages_gt: 25
+  max_auto_write_pages: 100
+  require_review_if_pages_gt: 150
 
 query:
   context_budget_chars: 21000

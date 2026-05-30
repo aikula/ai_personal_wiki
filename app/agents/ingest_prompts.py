@@ -49,8 +49,11 @@ Rules:
 - Max {max_pages} pages total across create+update+supersede
 - Each PlannedPage.slug format: "{project}/category/page_name"
   Use lowercase, hyphens for spaces. Example: "myapp/storage/redis-cache"
+- For each PlannedPage, include tags that identify the device model, standard, or document
+  version when the source mentions them. Tags are MANDATORY, never empty.
+  Example tags for a MTU engine manual: ["mtu-4000-l33f", "series-4000", "maintenance"]
 - For pages_to_update: slug MUST match existing page slug exactly
-- source_sections: copy relevant text fragments verbatim (max 1500 chars each)
+- source_sections: copy relevant text fragments verbatim (max 3000 chars each)
 - claims: extract small factual units with quote, normalized text, source_section,
   related_slugs, confidence, and status="active"
 - If two projects implement same thing differently: conflict_type = "cross_project_difference"
@@ -118,7 +121,12 @@ Generate the wiki page. Rules:
 - All internal links MUST use [[slug]] format, never relative paths
 - NEVER create nested wikilinks like [[page/[[other-page]]]] — each [[ must have exactly one matching ]]
 - title: concise, matches official naming from source
-- tags: 2-5 lowercase tags relevant to content
+- tags: MANDATORY, never empty. Include at least 2 of these categories when applicable:
+  * device model (e.g. "mtu-4000-l33f", "series-4000")
+  * standard or regulation reference (e.g. "iso-8528", "din-6280")
+  * document version or revision (e.g. "rev-03", "edition-2024")
+  * topic/domain (e.g. "maintenance", "safety", "diagnostics")
+  Example: ["mtu-4000-l33f", "safety", "gas-fuel", "rev-03"]
 - confidence: {confidence}
 - sources: {sources_count}
 - last_confirmed: {today}

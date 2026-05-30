@@ -156,18 +156,23 @@ def get_audit_agent(
     return AuditAgent(fs, llm, settings)
 
 
-# ── In-memory session store ──────────────────────────────────────
-# Phase 1: sessions live in RAM. Lost on restart.
-# Phase 2: persist to wiki-data/sessions/ as JSON files.
+# ── Session store (persistent) ──────────────────────────────────
+# Sessions persist to wiki-data/sessions/<scope>.json
 
-_sessions: dict[str, dict[str, ChatSession]] = {}
+from app.api.session_store import SessionStore
+
+_session_stores: dict[str, SessionStore] = {}
 
 
 def get_session_store(
     ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> dict[str, ChatSession]:
     scope = ctx.owner_user_id or ctx.workspace_id or "local"
-    return _sessions.setdefault(scope, {})
+    if scope not in _session_stores:
+        sessions_dir = ctx.wiki_data_path / "sessions"
+        json_path = sessions_dir / f"{scope}.json"
+        _session_stores[scope] = SessionStore(json_path)
+    return _session_stores[scope]
 
 
 def get_or_create_session(

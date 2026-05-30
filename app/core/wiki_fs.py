@@ -1956,9 +1956,14 @@ created: {today}
 
     def _write_project_index(self, project: str, pages: list, today: str) -> None:
         """Write per-project L1 index (wiki/<project>/index.md)."""
+        # Exclude internal pages (claims, sources) from navigation index
+        content_pages = [
+            p for p in pages
+            if not p.slug.startswith(("_claims/", "_sources/"))
+        ]
         # Group pages by type
         by_type: dict[str, list] = {}
-        for p in pages:
+        for p in content_pages:
             by_type.setdefault(p.page_type, []).append(p)
 
         # Content
@@ -1966,7 +1971,7 @@ created: {today}
             f"# {project} Wiki",
             "",
             f"Last updated: {today}",
-            f"Pages: {len(pages)}",
+            f"Pages: {len(content_pages)}",
             "",
         ]
 

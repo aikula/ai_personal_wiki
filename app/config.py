@@ -53,9 +53,9 @@ class LimitsSettings:
     agents_md_chars: int = 4_200
     skills_md_chars: int = 8_750
     index_l0_chars: int = 10_500
-    index_l1_chars: int = 5_250
-    entity_page_chars: int = 3_500
-    concept_page_chars: int = 5_250
+    index_l1_chars: int = 10_000
+    entity_page_chars: int = 8_000
+    concept_page_chars: int = 10_000
     log_md_chars: int = 3_500
     conflicts_md_chars: int = 35_000
 
@@ -67,13 +67,13 @@ class IngestSettings:
     auto_lint_after_ingest: bool = True
     conflict_continue_on_detect: bool = True
     # Large source ingest settings (Phase 2)
-    large_source_threshold_chars: int = 100_000
+    large_source_threshold_chars: int = 25_000
     chunk_min_chars: int = 8_000
     chunk_target_chars: int = 16_000
     chunk_max_chars: int = 25_000
     max_pages_per_batch: int = 10
-    max_auto_write_pages: int = 15
-    require_review_if_pages_gt: int = 25
+    max_auto_write_pages: int = 100
+    require_review_if_pages_gt: int = 150
 
 
 @dataclass
