@@ -18,6 +18,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.agents.audit_agent import AuditAgent
 from app.agents.ingest_agent import IngestAgent
 from app.agents.query_agent import ChatSession, QueryAgent
+from app.api.session_store import SessionStore
 from app.config import Settings
 from app.core.context import WorkspaceContext, personal_local_context, personal_server_context
 from app.core.interpreter import CodeInterpreter
@@ -158,8 +159,6 @@ def get_audit_agent(
 
 # ── Session store (persistent) ──────────────────────────────────
 # Sessions persist to wiki-data/sessions/<scope>.json
-
-from app.api.session_store import SessionStore
 
 _session_stores: dict[str, SessionStore] = {}
 

@@ -179,7 +179,8 @@ class TestClaimDeduplication:
         )
         assert dup is None
 
-    def test_no_duplicate_different_source(self, fs):
+    def test_finds_duplicate_different_source(self, fs):
+        """Cross-source fuzzy dedup: same claim from different source is found."""
         claim = _make_claim()
         fs.write_claim(claim)
 
@@ -187,7 +188,8 @@ class TestClaimDeduplication:
             normalized="Redis 7.2 используется для session cache.",
             source_id="other/source",
         )
-        assert dup is None
+        assert dup is not None
+        assert dup.claim_id == claim.claim_id
 
 
 # ── Claim status updates ────────────────────────────────────────

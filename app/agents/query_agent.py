@@ -645,7 +645,7 @@ class QueryAgent:
             # Replace old messages with summary, keep last 2
             keep_from = non_tool[-2]
             keep_idx = session.messages.index(keep_from)
-            session.messages = [summary_msg] + session.messages[keep_idx:]
+            session.messages = [summary_msg, *session.messages[keep_idx:]]
             logger.debug("Compressed %d old messages into summary", len(to_summarize))
         except Exception as exc:
             logger.warning("History compression failed: %s", exc)

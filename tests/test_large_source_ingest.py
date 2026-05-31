@@ -186,14 +186,14 @@ class TestMergeAnalysis:
                 chunk_id="chunk-001", source_id="test/doc",
                 section_path=["Intro"],
                 candidate_pages=["test/overview"],
-                claims=[{"quote": "Fact 1", "normalized": "Fact 1 normalized"}],
+                claims=[{"quote": "Redis uses volatile-lru", "normalized": "Redis configured with volatile-lru eviction policy"}],
                 conflicts=[],
             ),
             ChunkAnalysisResult(
                 chunk_id="chunk-002", source_id="test/doc",
                 section_path=["Features"],
                 candidate_pages=["test/overview", "test/features"],
-                claims=[{"quote": "Fact 2", "normalized": "Fact 2 normalized"}],
+                claims=[{"quote": "PostgreSQL stores data", "normalized": "PostgreSQL is primary data persistence layer"}],
                 conflicts=[],
             ),
         ]
