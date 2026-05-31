@@ -1397,15 +1397,30 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         source_id: str,
     ) -> Claim | None:
         """
-        Check if a claim with the same normalized text already exists
-        for the same source. Returns the existing claim if found.
+        Check if a similar claim already exists (fuzzy match across all sources).
+        Uses rapidfuzz with threshold 85 for near-duplicate detection.
         """
-        normalized_key = normalized[:100].lower().strip()
-        existing = self.list_claims(source_id=source_id, status="active")
-        for claim in existing:
-            if claim.normalized[:100].lower().strip() == normalized_key:
-                return claim
-        return None
+        from rapidfuzz import fuzz
+
+        normalized_lower = normalized.lower().strip()
+        norm_len = len(normalized_lower)
+        threshold = 85
+        best_match: Claim | None = None
+        best_score = 0
+
+        # Search across all claims in project, not just same source
+        all_claims = self.list_claims(status="active")
+        for claim in all_claims:
+            claim_lower = claim.normalized.lower().strip()
+            # Quick length filter before expensive fuzzy
+            if abs(len(claim_lower) - norm_len) > norm_len * 0.4:
+                continue
+            score = fuzz.ratio(normalized_lower, claim_lower)
+            if score > threshold and score > best_score:
+                best_score = score
+                best_match = claim
+
+        return best_match
 
     def update_claim_status(self, claim_id: str, project: str, source_id: str, chunk_id: str, new_status: str) -> bool:
         """Update the status of an existing claim."""
@@ -1668,6 +1683,11 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
             archive_path.write_text(existing + "\n" + content, encoding="utf-8")
         else:
             archive_path.write_text(content, encoding="utf-8")
+        # Keep only 5 most recent archive files
+        archives = sorted(archive_dir.glob("log_*.md"), reverse=True)
+        for old in archives[5:]:
+            old.unlink()
+            logger.info("Removed old log archive: %s", old.name)
 
     # ── Draft operations ──────────────────────────────────────────
 
@@ -2186,6 +2206,11 @@ created: {today}
             open_only = re.findall(r"## \[OPEN\].*?(?=## \[|$)", content, re.DOTALL)
             new_content = "# Conflicts\n\n" + "\n---\n\n".join(open_only)
             (self.root / "conflicts.md").write_text(new_content, encoding="utf-8")
+            # Keep only 5 most recent conflict archives
+            archives = sorted(archive_dir.glob("conflicts_*.md"), reverse=True)
+            for old in archives[5:]:
+                old.unlink()
+                logger.info("Removed old conflict archive: %s", old.name)
 
 
 # ─────────────────────────────────────────────

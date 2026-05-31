@@ -46,6 +46,7 @@ class LLMSettings:
     model: str = "gpt-4o"
     temperature: float = 0.1
     timeout_seconds: int = 60
+    context_window_tokens: int = 0  # 0 = auto-detect, fallback 128K
 
 
 @dataclass

@@ -292,6 +292,9 @@ print(json.dumps(result))
                 meta["created"] = today
             # Enforce project from slug (LLM sometimes copies source-file project onto _general pages)
             meta["project"] = planned.slug.split("/")[0] if "/" in planned.slug else analysis.project
+            # Auto-fill empty tags from slug and source
+            if not meta.get("tags"):
+                meta["tags"] = self._derive_tags(planned.slug, analysis.source_file)
             content = auto_link(content, self.fs.build_link_candidates(), current_slug=planned.slug)
             existing_slugs = {p.slug for p in self.fs.list_pages()}
             content = normalize_wikilinks(content, existing_slugs)
@@ -481,6 +484,20 @@ print(json.dumps(result))
         if path.exists():
             return path.read_text(encoding="utf-8")
         return ""
+
+    def _derive_tags(self, slug: str, source_file: str) -> list[str]:
+        """Auto-fill tags from slug category and source file name."""
+        tags = []
+        parts = slug.split("/")
+        # Category from slug path (e.g. "safety" from "_general/safety/fire-prevention")
+        if len(parts) >= 2:
+            tags.append(parts[-2])
+        # Source file stem as tag (e.g. "MTU-L33-manual" from raw/_general/MTU-L33-manual.pdf)
+        if source_file:
+            stem = source_file.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+            if stem and stem not in tags:
+                tags.append(stem)
+        return tags[:5]
 
     def _char_limit_for_type(self, page_type: str) -> int:
         return {
@@ -762,6 +779,15 @@ print(json.dumps(result))
             if not normalized:
                 continue
             if self.fs.find_duplicate_claim(normalized, source_id):
+                # Mark existing duplicate as superseded by the new claim
+                existing = self.fs.find_duplicate_claim(normalized, source_id)
+                if existing:
+                    self.fs.update_claim_status(
+                        existing.claim_id, existing.project,
+                        existing.source_id, existing.chunk_id,
+                        "superseded",
+                    )
+                    logger.info("Claim superseded (fuzzy dedup): %s -> %s", existing.claim_id, source_id)
                 continue
             chunk_id = str(data.get("chunk_id") or "chunk-000")
             claim_id = str(data.get("claim_id") or f"{source_id}#{chunk_id}-claim-{idx:03d}")
@@ -978,6 +1004,8 @@ print(json.dumps(result))
         if not meta.get("created"):
             meta["created"] = today
         meta["project"] = project
+        if not meta.get("tags"):
+            meta["tags"] = self._derive_tags(slug, source_file)
 
         existing_slugs = {p.slug for p in self.fs.list_pages()}
         content = normalize_wikilinks(content, existing_slugs)

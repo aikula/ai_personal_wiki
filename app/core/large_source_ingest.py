@@ -442,19 +442,31 @@ def merge_analysis(
                     "source_sections": [],
                 }
             pages_by_slug[page]["source_chunks"].append(cr.chunk_id)
+            if len(pages_by_slug[page]["source_chunks"]) > 1:
+                logger.warning(
+                    "Merge collision: slug '%s' planned by multiple chunks %s",
+                    page, pages_by_slug[page]["source_chunks"],
+                )
             for section in cr.page_sections.get(page, []):
                 if section and section not in pages_by_slug[page]["source_sections"]:
                     pages_by_slug[page]["source_sections"].append(section)
 
-    # Deduplicate claims
-    seen_claims: set[str] = set()
+    # Deduplicate claims (fuzzy match within same source)
+    from rapidfuzz import fuzz as _fuzz
+
+    seen_claims: list[str] = []  # store normalized texts for fuzzy comparison
     all_claims = []
     for cr in chunk_results:
         for claim in cr.claims:
-            normalized = claim.get("normalized", claim.get("quote", ""))
-            claim_key = normalized[:100].lower().strip()
-            if claim_key not in seen_claims:
-                seen_claims.add(claim_key)
+            normalized = claim.get("normalized", claim.get("quote", "")).lower().strip()
+            is_dup = False
+            for seen in seen_claims:
+                if abs(len(seen) - len(normalized)) < max(len(normalized), 1) * 0.4:
+                    if _fuzz.ratio(normalized, seen) > 85:
+                        is_dup = True
+                        break
+            if not is_dup:
+                seen_claims.append(normalized)
                 all_claims.append(claim)
             for slug in claim.get("related_slugs", []):
                 if slug in pages_by_slug and claim not in pages_by_slug[slug]["claims"]:
