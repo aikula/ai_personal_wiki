@@ -79,9 +79,9 @@ class IngestSettings:
 
 @dataclass
 class QuerySettings:
-    context_budget_chars: int = 21_000
+    context_budget_chars: int = 35_000
     max_wiki_pages_in_context: int = 6
-    history_budget_chars: int = 7_000
+    history_budget_chars: int = 10_000
     allow_code_execution: bool = False
 
 

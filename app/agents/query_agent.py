@@ -95,6 +95,7 @@ class QueryAgent:
         if self._is_meta_question(question):
             return self._handle_meta(question, session)
 
+        self._compress_session_history(session)
         question_type, keywords = self._classify(question)
         logger.info("Query: type=%s question=%s", question_type, question[:100])
 
@@ -142,6 +143,7 @@ class QueryAgent:
             yield "[DONE]"
             return
 
+        self._compress_session_history(session)
         question_type, keywords = self._classify(question)
 
         if question_type in ("factual", "comparison"):
@@ -210,7 +212,15 @@ class QueryAgent:
     ) -> tuple[str, list[str], int]:
         pages = self._retrieve_pages(keywords, session.project_filter, top_k=20)
 
-        # Index-first: read outlines to select best pages before reading full content
+        # Index-first: prioritize pages matching L1 index keywords
+        index_slugs = self._index_first_retrieve(question, session.project_filter)
+        if index_slugs:
+            index_set = set(index_slugs)
+            priority = [p for p in pages if p.slug in index_set]
+            rest = [p for p in pages if p.slug not in index_set]
+            pages = priority + rest
+
+        # Outline-based selection to pick best pages before reading full content
         selected_pages = []
         for page in pages[:10]:
             outline = self.fs.read_page_outline(page.slug)
@@ -235,6 +245,18 @@ class QueryAgent:
             selected_pages = pages[:4]
 
         wiki_context = self._build_wiki_context(selected_pages)
+
+        # Claims retrieval: add relevant factual claims
+        claims = self.fs.search_claims(question, project=session.project_filter, top_k=5)
+        if claims:
+            claims_section = "\n\n## Relevant Claims\n"
+            for c in claims:
+                claims_section += (
+                    f"- **{c.normalized}** "
+                    f"(source: `{c.source_path}`, confidence: {c.confidence:.1f})\n"
+                )
+            wiki_context += claims_section
+
         answer = self._generate_answer(question, wiki_context, session)
         return answer, [p.slug for p in selected_pages], 1
 
@@ -252,6 +274,13 @@ class QueryAgent:
 
         sections = []
         for proj, proj_pages in sorted(by_project.items()):
+            # Index-first: prioritize by L1 index keyword match
+            index_slugs = self._index_first_retrieve(question, proj)
+            if index_slugs:
+                index_set = set(index_slugs)
+                priority = [p for p in proj_pages if p.slug in index_set]
+                rest = [p for p in proj_pages if p.slug not in index_set]
+                proj_pages = priority + rest
             # Index-first: select best pages per project via outlines
             best = []
             for page in proj_pages[:5]:
@@ -346,6 +375,12 @@ class QueryAgent:
                         )
                     else:
                         preview = page.raw[:1500]
+                    wikilinks = extract_wikilinks(page.raw)[:10]
+                    if wikilinks:
+                        preview += (
+                            "\nRelated wikilinks: "
+                            + ", ".join(f"[[{wl}]]" for wl in wikilinks)
+                        )
                     scratchpad.append(
                         f"[iter {iteration+1}] read_page({slug!r}) → {preview}"
                     )
@@ -481,6 +516,40 @@ class QueryAgent:
 
     # ── Helpers ──────────────────────────────────────────────────
 
+    def _index_first_retrieve(self, question: str, project: str | None) -> list[str]:
+        """Read project L1 index, match keywords against sections, return prioritized slugs."""
+        if not project:
+            return []
+        page = self.fs.read_page(f"{project}/index")
+        if not page:
+            return []
+
+        question_words = set(
+            w.lower() for w in re.split(r"\W+", question) if len(w) > 2
+        )
+        if not question_words:
+            return []
+
+        index_links = extract_wikilinks(page.raw)
+        lines = page.raw.split("\n")
+        current_section = ""
+        scored: list[tuple[int, str]] = []
+        scored_slugs: set[str] = set()
+
+        for line in lines:
+            if line.startswith("##"):
+                current_section = line.lower()
+            for link in index_links:
+                if f"[[{link}" in line and link not in scored_slugs:
+                    s_score = sum(1 for w in question_words if w in current_section)
+                    l_score = sum(1 for w in question_words if w in line.lower())
+                    if s_score + l_score > 0:
+                        scored.append((s_score + l_score, link))
+                        scored_slugs.add(link)
+
+        scored.sort(reverse=True)
+        return [slug for _, slug in scored[:10]]
+
     def _classify(self, question: str) -> tuple[str, list[str]]:
         raw = self.llm.call(
             system="You classify questions. Output only JSON.",
@@ -550,6 +619,36 @@ class QueryAgent:
                 seen.add(q)
                 unique.append(q)
         return unique
+
+    def _compress_session_history(self, session: ChatSession) -> None:
+        """Compress old messages via LLM summary when session has >4 messages."""
+        non_tool = [m for m in session.messages if m.role != "tool"]
+        if len(non_tool) <= 4:
+            return
+
+        # Summarize first N-2, keep last 2 as-is
+        to_summarize = non_tool[:-2]
+        summary_text = "\n".join(
+            f"{m.role.upper()}: {m.content[:500]}" for m in to_summarize
+        )
+        try:
+            compressed = self.llm.call(
+                system="Summarize this conversation in 2-3 sentences, preserving key facts and cited [[slug]] references.",
+                prompt=summary_text,
+                temperature=0.0,
+            )
+            summary_msg = ChatMessage(
+                role="assistant",
+                content=f"[Conversation summary] {compressed.strip()}",
+                timestamp=to_summarize[-1].timestamp if to_summarize else now_iso(),
+            )
+            # Replace old messages with summary, keep last 2
+            keep_from = non_tool[-2]
+            keep_idx = session.messages.index(keep_from)
+            session.messages = [summary_msg] + session.messages[keep_idx:]
+            logger.debug("Compressed %d old messages into summary", len(to_summarize))
+        except Exception as exc:
+            logger.warning("History compression failed: %s", exc)
 
     def _retrieve_pages(
         self,

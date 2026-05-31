@@ -328,9 +328,9 @@ ingest:
   conflict_continue_on_detect: true
 
 query:
-  context_budget_chars: 21000
+  context_budget_chars: 35000
   max_wiki_pages_in_context: 6
-  history_budget_chars: 7000
+  history_budget_chars: 10000
 
 audit:
   confidence_warn_threshold: 0.4

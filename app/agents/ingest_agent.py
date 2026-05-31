@@ -422,6 +422,7 @@ print(json.dumps(result))
                 is_cross_project=conflict.is_cross_project,
             )
             self.fs.append_conflict(entry)
+            self._try_auto_resolve_conflict(cid, conflict.conflict_type, conflict.description)
             assigned_ids.append(cid)
         return assigned_ids
 
@@ -448,6 +449,36 @@ print(json.dumps(result))
             self.fs.append_skill(section=section, skill_text=rule)
         self.fs.resolve_conflict(conflict_id=conflict_id, resolution=resolution, user_comment=user_comment, skill_extracted=rule)
         return rule
+
+    def _try_auto_resolve_conflict(self, conflict_id: str, conflict_type: str, description: str) -> bool:
+        """Try to auto-resolve a conflict using skills.md rules. Returns True if resolved."""
+        skills_raw = self.fs.read_skills()
+        if not skills_raw:
+            return False
+
+        type_lower = conflict_type.lower()
+        desc_lower = (description or "").lower()
+
+        # Search each skill line for relevance to conflict type
+        for line in skills_raw.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or line.startswith("<!--"):
+                continue
+            line_lower = line.lower()
+            # Check if this skill line covers the conflict type or key terms
+            conflict_terms = type_lower.replace("_", " ").split() + desc_lower.split()[:5]
+            match_count = sum(1 for term in conflict_terms if len(term) > 3 and term in line_lower)
+            if match_count >= 2:
+                resolution = f"auto_skill: {line}"
+                self.fs.resolve_conflict(
+                    conflict_id=conflict_id,
+                    resolution=resolution,
+                    user_comment="Auto-resolved by skill matching",
+                    skill_extracted="",
+                )
+                logger.info("Auto-resolved %s via skill: %s", conflict_id, line[:80])
+                return True
+        return False
 
     def rebuild_from_scratch(self, progress_callback=None) -> dict:
         logger.info("Rebuild started")
@@ -1041,6 +1072,11 @@ print(json.dumps(result))
                 is_cross_project=conflict_data.get("is_cross_project", False),
             )
             self.fs.append_conflict(entry)
+            self._try_auto_resolve_conflict(
+                cid,
+                conflict_data.get("conflict_type", ""),
+                conflict_data.get("description", ""),
+            )
             return cid
         except Exception as exc:
             logger.error("Failed to record conflict: %s", exc)

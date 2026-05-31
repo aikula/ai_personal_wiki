@@ -62,6 +62,8 @@ Sprint 3.12 (thresholds → config) ► Sprint 3.13 (max completion tokens)
 
 **Порядок реализации:** 1.4 → 1.5 → 1.3 → 1.2 → 1.1
 
+**Статус: ✅ Sprint 1 завершён (commit feb7f4b)**
+
 ---
 
 ## Sprint 2 — Качество запросов (5 задач)
@@ -109,6 +111,8 @@ Sprint 3.12 (thresholds → config) ► Sprint 3.13 (max completion tokens)
 - В UI: показывать auto-resolved конфликты отдельно с возможностью отмены
 
 **Порядок реализации:** 2.8 → 2.6 → 2.7 → 2.10 → 2.9
+
+**Статус: ✅ Sprint 2 завершён**
 
 ---
 

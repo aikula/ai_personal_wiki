@@ -1391,6 +1391,30 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
 
         return claims
 
+    def search_claims(self, query: str, project: str | None = None, top_k: int = 10) -> list[Claim]:
+        """Fuzzy search claims by normalized text. Returns top_k matches."""
+        from rapidfuzz import fuzz as _fuzz
+
+        all_claims = self.list_claims(project=project, status="active")
+        if not all_claims:
+            return []
+
+        query_lower = query.lower().strip()
+        scored: list[tuple[int, Claim]] = []
+        for claim in all_claims:
+            normalized = (claim.normalized or claim.quote or "").lower()
+            if not normalized:
+                continue
+            # Quick length pre-filter
+            if abs(len(normalized) - len(query_lower)) > len(query_lower) * 2:
+                continue
+            score = _fuzz.partial_ratio(query_lower, normalized)
+            if score > 60:
+                scored.append((score, claim))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [claim for _, claim in scored[:top_k]]
+
     def find_duplicate_claim(
         self,
         normalized: str,

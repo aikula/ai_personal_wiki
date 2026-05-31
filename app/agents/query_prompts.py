@@ -71,6 +71,8 @@ Rules:
 - Max {max_iterations} iterations
 - Always cite [[slug]] in final answer
 - If info not found after {max_iterations} iterations: say so explicitly
+- After reading a page, consider following its Related wikilinks for additional context
+- Do not follow more than 10 wikilinks per page
 """
 
 REACT_PROMPT = """## Question
