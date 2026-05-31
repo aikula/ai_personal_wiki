@@ -75,14 +75,22 @@ AGENTS.md:          max  4_200 chars  (~1200 tokens)
 skills.md:          max  8_750 chars  (~2500 tokens)
 index.md (L0):      max 10_500 chars  (~3000 tokens)
 domain index (L1):  max  5_250 chars  (~1500 tokens)
-entity page:        max  3_500 chars  (~1000 tokens)
-concept page:       max  5_250 chars  (~1500 tokens)
+entity page:        max 10_000 chars  (~2850 tokens)
+concept page:       max 14_000 chars  (~4000 tokens)
 log.md:             max  3_500 chars  (rotate when exceeded)
 conflicts.md:       max 35_000 chars  (archive resolved when exceeded)
 ```
 If an agent operation would exceed these limits, it MUST split or
 rotate BEFORE writing. Splitting must be semantic (find natural
 boundary), never mechanical (never split mid-sentence or mid-section).
+
+### Token Metering (Multi-user mode)
+- Billing: output tokens only (input logged but not charged)
+- Reasoning models (o1, o3, r1, deepseek-r): 1.5x billing multiplier
+- Per-call logging: model, input/output tokens, billed amount, reasoning flag
+- Daily token budget: 30,000 output tokens
+- Welcome tokens: configurable per user (default 200K)
+- reasoning_model_budget: 500,000 reserved
 
 ### 3. Every wiki page has frontmatter
 Required fields — agent MUST include all of them:
@@ -131,6 +139,7 @@ Step 1 — Analysis pass: read source, identify entities/concepts,
          create/update. Output: AnalysisResult dataclass.
 Step 2 — Generation pass: use AnalysisResult to write pages.
          Never write pages based on raw source directly.
+         Chunk overlap: 750 chars between consecutive chunks.
 
 ### 8. Conflicts are opportunities, not errors
 When ingest detects a conflict:
@@ -310,14 +319,16 @@ llm:
   model: "gpt-4o"
   temperature: 0.1                         # низкая для детерминизма при ingest
   timeout_seconds: 60
+  context_window_tokens: 0                 # 0 = auto-detect from model
+  max_completion_tokens: 16000             # output-only billing with reasoning model budget
 
 limits:
   agents_md_chars: 4200
   skills_md_chars: 8750
   index_l0_chars: 10500
   index_l1_chars: 5250
-  entity_page_chars: 3500
-  concept_page_chars: 5250
+  entity_page_chars: 10000
+  concept_page_chars: 14000
   log_md_chars: 3500
   conflicts_md_chars: 35000
 
@@ -326,6 +337,10 @@ ingest:
   max_pages_per_source: 10        # защита от взрыва страниц
   auto_lint_after_ingest: true
   conflict_continue_on_detect: true
+  max_completion_tokens: 8000
+  chunk_overlap_chars: 750
+  max_auto_write_pages: 150
+  require_review_if_pages_gt: 150
 
 query:
   context_budget_chars: 35000

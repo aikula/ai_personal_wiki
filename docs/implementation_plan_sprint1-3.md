@@ -164,6 +164,42 @@ skill_extraction_limit: 800     # обрезка skill summary
 
 ---
 
+## Post-sprint: ревью и фикс
+
+**Commits:** 8d33984, ad0aa31, 24c1afa, c3194e6
+
+### Code review исправления
+- Убран двойной вызов `find_duplicate_claim` (ingest_agent.py)
+- Chunk overlap применён к `_split_section` sub-chunks (large_source_ingest.py)
+- Auto-resolve threshold поднят: 3+ specific terms + stop-words фильтр
+- History compression сохраняет `cited_slugs` (query_agent.py)
+- Удалён мёртвый код `datetime.now().isoformat()` (wiki_fs.py)
+
+### Тарификация токенов
+- **Биллинг:** только output tokens (ранее input+output)
+- **Логирование:** оба (input/output) в usage_events и per-call INFO log
+- **Reasoning models:** detection (o1/o3/r1/deepseek-r) × 1.5x multiplier
+- **Экономия:** ~3.2x дешевле на ingest (MTU PDF: 724K → 228K billed tokens)
+
+### Уточнение лимитов (по результатам пересборки)
+| Параметр | Было | Стало | Причина |
+|----------|------|-------|---------|
+| `entity_page_chars` | 8,000 | **10,000** | troubleshooting-страницы не помещались |
+| `concept_page_chars` | 10,000 | **14,000** | запас для объёмных концептов |
+| `ingest.max_completion_tokens` | 4,000 | **8,000** | LLM обрезал JSON на 4K |
+| `llm.max_completion_tokens` | 8,000 | **16,000** | headroom для reasoning models |
+| `max_auto_write_pages` | 100 | **150** | MTU PDF планирует 105 страниц |
+
+### Результаты пересборки (2026-05-31)
+- Файлов обработано: **3/3** (0 ошибок)
+- Wiki-страниц создано: **128** (из 105 planned для MTU + 3 для audit + 22 для docx)
+- Claims создано: **149**
+- Ошибки char limit: **0** (было 3)
+- Ошибки JSON parse: **0** (было 1)
+- Context window auto-detected: **50,000 tokens** (privateLLM)
+
+---
+
 ## Техдолг (не реализуем, только фиксируем)
 
 | # | Задача | Почему отложено |
@@ -182,9 +218,9 @@ skill_extraction_limit: 800     # обрезка skill summary
 | # | Задача | Где |
 |---|--------|-----|
 | ✅ | Порог чанкинга 25K | `config.py`, `settings.yaml` |
-| ✅ | max_auto_write_pages: 100 | `config.py`, `settings.yaml` |
+| ✅ | max_auto_write_pages: 100 → 150 | `config.py`, `settings.yaml` |
 | ✅ | require_review_if_pages_gt: 150 | `config.py`, `settings.yaml` |
-| ✅ | Лимиты страниц: entity 8K, concept 10K, index_l1 10K | `config.py`, `settings.yaml` |
+| ✅ | Лимиты страниц: entity 10K, concept 14K, index_l1 10K | `config.py`, `settings.yaml` |
 | ✅ | Source section: 1500→3000 | `ingest_prompts.py` |
 | ✅ | Source sections budget: 16K→24K | `ingest_agent.py` |
 | ✅ | Retry при CharLimitExceeded | `ingest_agent.py` (`_retry_compact_page`) |
@@ -194,3 +230,7 @@ skill_extraction_limit: 800     # обрезка skill summary
 | ✅ | planned_page_not_created lint | `linter.py` |
 | ✅ | Chat persistence (SessionStore) | `session_store.py`, `dependencies.py` |
 | ✅ | force_char_limit параметр | `ingest_agent.py` |
+| ✅ | Output-only token billing + reasoning model budget | `metered_llm_client.py`, `config.py` |
+| ✅ | ingest.max_completion_tokens: 8000 (было 4000) | `config.py`, `settings.yaml` |
+| ✅ | llm.max_completion_tokens: 16000 (было 8000) | `config.py`, `settings.yaml` |
+| ✅ | Context window auto-detect (50000 для privateLLM) | `llm_client.py` |
