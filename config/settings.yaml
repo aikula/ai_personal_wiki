@@ -15,6 +15,7 @@ multi_user:
   default_daily_tokens: 30000
   default_welcome_tokens: 200000
   daily_reset_timezone: "UTC"
+  reasoning_model_budget: 500000
 
 llm:
   base_url: "https://api.openai.com/v1"

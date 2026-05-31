@@ -126,6 +126,7 @@ class MultiUserSettings:
     default_welcome_tokens: int = 200_000
     daily_reset_timezone: str = "UTC"
     admin_emails: list[str] = field(default_factory=list)
+    reasoning_model_budget: int = 500_000  # reserved tokens for reasoning models
 
 
 @dataclass

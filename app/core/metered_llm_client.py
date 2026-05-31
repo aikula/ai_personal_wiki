@@ -38,7 +38,11 @@ class LLMUsage:
 
 
 class MeteredLLMClient:
-    """LLM client that records usage and enforces token quotas."""
+    """LLM client that records usage and enforces token quotas.
+
+    Billing: charges only output tokens (generated content).
+    Logging: records both input and output tokens in usage_events.
+    """
 
     def __init__(
         self,
@@ -57,6 +61,12 @@ class MeteredLLMClient:
         self._operation = operation
 
     @property
+    def is_reasoning_model(self) -> bool:
+        """Check if current model is a reasoning model (o1, o3, deepseek-r1, etc.)."""
+        name = self._llm.model.lower()
+        return any(tag in name for tag in ("o1", "o3", "o4", "reason", "r1", "deepseek-r"))
+
+    @property
     def model(self) -> str:
         return self._llm.model
 
@@ -68,15 +78,20 @@ class MeteredLLMClient:
         json_mode: bool = False,
         max_tokens: int | None = None,
     ) -> str:
-        # Estimate input tokens
+        # Estimate tokens
         input_chars = len(system) + len(prompt)
         estimated_input = max(1, int(input_chars / CHARS_PER_TOKEN))
-        estimated_total = estimated_input + max_tokens if max_tokens else estimated_input * 2
+        # Billing: reserve based on estimated output tokens only
+        estimated_output = max_tokens or max(1, estimated_input)
+        billed_estimate = estimated_output
+        # Reasoning models: apply budget multiplier for thinking tokens
+        if self.is_reasoning_model:
+            billed_estimate = int(billed_estimate * 1.5)
 
         # Reserve quota in multi-user mode before provider call
         if self._is_multi_user:
             try:
-                self._store.consume_tokens(self._user_id, estimated_total)
+                self._store.consume_tokens(self._user_id, billed_estimate)
             except Exception as exc:
                 from app.core.control_store import InsufficientCreditsError
                 if isinstance(exc, InsufficientCreditsError):
@@ -93,7 +108,7 @@ class MeteredLLMClient:
             )
         except Exception:
             if self._is_multi_user:
-                self._store.refund_tokens(self._user_id, estimated_total)
+                self._store.refund_tokens(self._user_id, billed_estimate)
             raise
 
         # Calculate actual usage
@@ -101,9 +116,9 @@ class MeteredLLMClient:
         total_tokens = estimated_input + output_tokens
 
         if self._is_multi_user:
-            self._reconcile_reserved_tokens(estimated_total, total_tokens)
+            self._reconcile_reserved_tokens(billed_estimate, output_tokens)
 
-        # Record usage
+        # Record usage (both input and output for analytics)
         if self._is_multi_user:
             try:
                 self._record_usage(
@@ -113,7 +128,6 @@ class MeteredLLMClient:
                 )
             except Exception as exc:
                 logger.error("Failed to record LLM usage: %s", exc)
-                # In multi-user mode, recording failure is serious
                 raise UsageRecordingError(str(exc)) from exc
 
         return response
@@ -124,14 +138,17 @@ class MeteredLLMClient:
         messages: list[dict],
         temperature: float | None = None,
     ):
-        # For streaming, we estimate upfront and record after
+        # For streaming, estimate output and reserve based on that
         input_chars = len(system) + sum(len(m.get("content", "")) for m in messages)
         estimated_input = max(1, int(input_chars / CHARS_PER_TOKEN))
-        estimated_total = estimated_input * 3  # rough estimate for streaming
+        # Billing: reserve based on estimated output (rough: input size as output estimate)
+        billed_estimate = max(1, estimated_input)
+        if self.is_reasoning_model:
+            billed_estimate = int(billed_estimate * 1.5)
 
         if self._is_multi_user:
             try:
-                self._store.consume_tokens(self._user_id, estimated_total)
+                self._store.consume_tokens(self._user_id, billed_estimate)
             except Exception as exc:
                 from app.core.control_store import InsufficientCreditsError
                 if isinstance(exc, InsufficientCreditsError):
@@ -148,7 +165,7 @@ class MeteredLLMClient:
                 yield chunk
         except Exception:
             if self._is_multi_user:
-                self._store.refund_tokens(self._user_id, estimated_total)
+                self._store.refund_tokens(self._user_id, billed_estimate)
             raise
 
         # Record actual usage
@@ -157,7 +174,7 @@ class MeteredLLMClient:
         total_tokens = estimated_input + output_tokens
 
         if self._is_multi_user:
-            self._reconcile_reserved_tokens(estimated_total, total_tokens)
+            self._reconcile_reserved_tokens(billed_estimate, output_tokens)
 
         if self._is_multi_user:
             try:
@@ -192,6 +209,12 @@ class MeteredLLMClient:
             is_estimated=True,
         )
         self._store.record_usage(event)
+        logger.info(
+            "Usage: model=%s in=%d out=%d total=%d billed=%d reason=%s op=%s",
+            self._llm.model, input_tokens, output_tokens, total_tokens,
+            output_tokens,  # billing is output-only
+            self.is_reasoning_model, self._operation,
+        )
 
     def _reconcile_reserved_tokens(self, reserved_tokens: int, actual_tokens: int) -> None:
         delta = reserved_tokens - actual_tokens
