@@ -32,13 +32,21 @@ _MD = markdown.Markdown(extensions=["tables", "fenced_code", "toc"])
 
 @router.get("/tree", response_model=WikiTreeResponse)
 async def get_wiki_tree(
-    fs: Annotated[WikiFS, Depends(get_wiki_fs)],
+    letter: str | None = Query(default=None, description="Filter pages by first letter of title"),
+    fs: Annotated[WikiFS, Depends(get_wiki_fs)] = None,
 ):
     """
     Return full wiki structure for right panel navigation.
-    Response used to render collapsible project tree with clickable links.
+    Optional letter filter groups pages by first letter of title.
     """
     tree = fs.get_wiki_tree()
+    if letter:
+        letter = letter.upper()
+        for proj, pages in tree.get("projects", {}).items():
+            tree["projects"][proj] = [
+                p for p in pages
+                if p.get("title", "?")[:1].upper() == letter
+            ]
     return WikiTreeResponse(**tree)
 
 

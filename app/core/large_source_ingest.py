@@ -202,18 +202,24 @@ def chunk_by_outline(
     target = ingest.chunk_target_chars
     max_chars = ingest.chunk_max_chars
     min_chars = ingest.chunk_min_chars
+    overlap = ingest.chunk_overlap_chars
 
+    previous_tail = ""
     for item in outline.items:
         section_text = source_content[item.start_pos:item.end_pos]
 
         if len(section_text) <= max_chars:
             section_path = _build_section_path(outline, item)
+            text = section_text
+            if previous_tail and len(text) > overlap:
+                text = previous_tail + "\n--- CONTINUED ---\n" + text
+            previous_tail = section_text[-overlap:] if overlap and len(section_text) > overlap else ""
             chunks.append(Chunk(
                 chunk_id=f"chunk-{len(chunks)+1:03d}",
                 source_path=outline.source_path,
                 section_path=section_path,
-                text=section_text,
-                char_count=len(section_text),
+                text=text,
+                char_count=len(text),
                 split_reason="outline",
                 headings=[{"text": item.text, "level": item.level}],
             ))

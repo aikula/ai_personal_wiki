@@ -23,6 +23,7 @@ llm:
   temperature: 0.1
   timeout_seconds: 60
   context_window_tokens: 0    # 0 = auto-detect, fallback 128K
+  max_completion_tokens: 8000
 
 wiki_data_path: "./wiki-data"
 
@@ -46,9 +47,22 @@ ingest:
   chunk_min_chars: 8000
   chunk_target_chars: 16000
   chunk_max_chars: 25000
+  chunk_overlap_chars: 750
   max_pages_per_batch: 10
   max_auto_write_pages: 100
   require_review_if_pages_gt: 150
+  # Thresholds
+  max_completion_tokens: 4000
+  existing_content_limit: 2000
+  link_candidates_limit: 15
+  link_aliases_per_candidate: 3
+  keyword_min_length: 5
+  keyword_source_limit: 3000
+  related_pages_limit: 10
+  retry_temperature: 0.0
+  default_confidence: 0.8
+  conflict_context_limit: 600
+  skill_extraction_limit: 800
 
 query:
   context_budget_chars: 35000

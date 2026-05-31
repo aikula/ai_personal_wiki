@@ -260,11 +260,11 @@ print(json.dumps(result))
                     existing_content = existing_page.raw
             char_limit = self._char_limit_for_type(planned.page_type)
             source_sections_text = self._format_source_sections(planned.source_sections)
-            existing_trimmed = existing_content[:2000]
+            existing_trimmed = existing_content[:self.settings.ingest.existing_content_limit]
             candidates = self.fs.build_link_candidates()
             link_lines = []
-            for c in candidates[:15]:
-                alias_str = "; ".join(c["aliases"][:3])
+            for c in candidates[:self.settings.ingest.link_candidates_limit]:
+                alias_str = "; ".join(c["aliases"][:self.settings.ingest.link_aliases_per_candidate])
                 link_lines.append(f"- [[{c['slug']}]] — {c['title']}; aliases: {alias_str}")
             link_candidates_text = "\n".join(link_lines) if link_lines else "(no candidates yet)"
             prompt = STEP2_PROMPT.format(
@@ -279,12 +279,12 @@ print(json.dumps(result))
                 char_limit=char_limit,
             )
             system = build_system_prompt(STEP2_SYSTEM, agents_md, skills)
-            raw = self.llm.call(system=system, prompt=prompt, temperature=0.1, json_mode=True, max_tokens=4000)
+            raw = self.llm.call(system=system, prompt=prompt, temperature=0.1, json_mode=True, max_tokens=self.settings.ingest.max_completion_tokens)
             try:
                 page_data = parse_json_response(raw, context=f"Step2 {planned.slug}")
             except ValueError:
                 retry_prompt = prompt + "\n\nIMPORTANT: Your previous response was not valid JSON. Output ONLY valid JSON."
-                raw = self.llm.call(system=system, prompt=retry_prompt, temperature=0.0, json_mode=True, max_tokens=4000)
+                raw = self.llm.call(system=system, prompt=retry_prompt, temperature=self.settings.ingest.retry_temperature, json_mode=True, max_tokens=self.settings.ingest.max_completion_tokens)
                 page_data = parse_json_response(raw, context=f"Step2 retry {planned.slug}")
             meta = page_data.get("meta", {})
             content = page_data.get("content", "")
@@ -355,7 +355,7 @@ print(json.dumps(result))
             char_limit=self.settings.limits.entity_page_chars,
         ) + "\n\nIMPORTANT: Keep the content VERY concise. Under 2500 chars of body text. No long explanations."
         try:
-            raw = self.llm.call(system=system, prompt=compact_prompt, temperature=0.0, json_mode=True, max_tokens=3000)
+            raw = self.llm.call(system=system, prompt=compact_prompt, temperature=self.settings.ingest.retry_temperature, json_mode=True, max_tokens=self.settings.ingest.max_completion_tokens)
             page_data = parse_json_response(raw, context=f"Step2 compact retry {planned.slug}")
             meta = page_data.get("meta", {})
             content = page_data.get("content", "")
@@ -415,8 +415,8 @@ print(json.dumps(result))
                 conflict_type=conflict.conflict_type,
                 page_a_slug=conflict.existing_slug,
                 page_b_ref=conflict.source_ref,
-                context_a=conflict.context_existing[:600],
-                context_b=conflict.context_source[:600],
+                context_a=conflict.context_existing[:self.settings.ingest.conflict_context_limit],
+                context_b=conflict.context_source[:self.settings.ingest.conflict_context_limit],
                 suggested_options=conflict.suggested_options,
                 description=conflict.description,
                 is_cross_project=conflict.is_cross_project,
@@ -435,7 +435,7 @@ print(json.dumps(result))
         raw = self.llm.call(
             system="You extract reusable rules from conflict resolutions.",
             prompt=SKILL_EXTRACTION_PROMPT.format(
-                conflict_summary=conflict_summary[:800],
+                conflict_summary=conflict_summary[:self.settings.ingest.skill_extraction_limit],
                 resolution=resolution,
                 user_comment=user_comment,
                 language_rule=lang_rule,
@@ -1001,8 +1001,8 @@ print(json.dumps(result))
 
         candidates = self.fs.build_link_candidates()
         link_lines = []
-        for c in candidates[:15]:
-            alias_str = "; ".join(c["aliases"][:3])
+        for c in candidates[:self.settings.ingest.link_candidates_limit]:
+            alias_str = "; ".join(c["aliases"][:self.settings.ingest.link_aliases_per_candidate])
             link_lines.append(f"- [[{c['slug']}]] — {c['title']}; aliases: {alias_str}")
         link_candidates_text = "\n".join(link_lines) if link_lines else "(no candidates yet)"
 
@@ -1012,22 +1012,22 @@ print(json.dumps(result))
             planned_page_json=json.dumps(planned_page, ensure_ascii=False, indent=2),
             source_file=source_file,
             source_sections=source_sections_text,
-            existing_content=existing_content[:2000],
+            existing_content=existing_content[:self.settings.ingest.existing_content_limit],
             link_candidates=link_candidates_text,
             today=today,
-            confidence=0.8,
+            confidence=self.settings.ingest.default_confidence,
             sources_count=1,
             char_limit=char_limit,
         )
 
         system = build_system_prompt(STEP2_SYSTEM, agents_md, skills)
-        raw = self.llm.call(system=system, prompt=prompt, temperature=0.1, json_mode=True, max_tokens=4000)
+        raw = self.llm.call(system=system, prompt=prompt, temperature=0.1, json_mode=True, max_tokens=self.settings.ingest.max_completion_tokens)
 
         try:
             page_data = parse_json_response(raw, context=f"Step2 {slug}")
         except ValueError:
             retry_prompt = prompt + "\n\nIMPORTANT: Your previous response was not valid JSON. Output ONLY valid JSON."
-            raw = self.llm.call(system=system, prompt=retry_prompt, temperature=0.0, json_mode=True, max_tokens=4000)
+            raw = self.llm.call(system=system, prompt=retry_prompt, temperature=self.settings.ingest.retry_temperature, json_mode=True, max_tokens=self.settings.ingest.max_completion_tokens)
             page_data = parse_json_response(raw, context=f"Step2 retry {slug}")
 
         meta = page_data.get("meta", {})
@@ -1065,8 +1065,8 @@ print(json.dumps(result))
                 conflict_type=conflict_data.get("conflict_type", "factual_contradiction"),
                 page_a_slug=conflict_data.get("existing_slug", "unknown"),
                 page_b_ref=conflict_data.get("source_ref", source_path),
-                context_a=conflict_data.get("context_existing", "")[:600],
-                context_b=conflict_data.get("context_source", "")[:600],
+                context_a=conflict_data.get("context_existing", "")[:self.settings.ingest.conflict_context_limit],
+                context_b=conflict_data.get("context_source", "")[:self.settings.ingest.conflict_context_limit],
                 suggested_options=conflict_data.get("suggested_options", []),
                 description=conflict_data.get("description", ""),
                 is_cross_project=conflict_data.get("is_cross_project", False),

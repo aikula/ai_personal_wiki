@@ -1999,16 +1999,17 @@ created: {today}
         logger.info("Index rebuilt: pages=%d projects=%d", len(pages), len(projects))
 
     def _write_project_index(self, project: str, pages: list, today: str) -> None:
-        """Write per-project L1 index (wiki/<project>/index.md)."""
+        """Write per-project L1 index (wiki/<project>/index.md) grouped by first letter."""
         # Exclude internal pages (claims, sources) from navigation index
         content_pages = [
             p for p in pages
             if not p.slug.startswith(("_claims/", "_sources/"))
         ]
-        # Group pages by type
-        by_type: dict[str, list] = {}
+        # Group pages by first letter of title
+        by_letter: dict[str, list] = {}
         for p in content_pages:
-            by_type.setdefault(p.page_type, []).append(p)
+            first = (p.title or "?")[0].upper()
+            by_letter.setdefault(first, []).append(p)
 
         # Content
         lines = [
@@ -2019,12 +2020,11 @@ created: {today}
             "",
         ]
 
-        for page_type in ["entity", "concept", "index", "log"]:
-            if page_type in by_type:
-                lines.append(f"## {page_type.title()}s")
-                for p in by_type[page_type]:
-                    lines.append(f"[[{p.slug}]] — {p.title}")
-                lines.append("")
+        for letter in sorted(by_letter.keys()):
+            lines.append(f"## {letter}")
+            for p in sorted(by_letter[letter], key=lambda x: x.title):
+                lines.append(f"[[{p.slug}]] — {p.title}")
+            lines.append("")
 
         content = "\n".join(lines).rstrip() + "\n"
 

@@ -47,6 +47,7 @@ class LLMSettings:
     temperature: float = 0.1
     timeout_seconds: int = 60
     context_window_tokens: int = 0  # 0 = auto-detect, fallback 128K
+    max_completion_tokens: int = 8000
 
 
 @dataclass
@@ -72,9 +73,22 @@ class IngestSettings:
     chunk_min_chars: int = 8_000
     chunk_target_chars: int = 16_000
     chunk_max_chars: int = 25_000
+    chunk_overlap_chars: int = 750
     max_pages_per_batch: int = 10
     max_auto_write_pages: int = 100
     require_review_if_pages_gt: int = 150
+    # Thresholds (extracted from hardcoded values)
+    max_completion_tokens: int = 4000
+    existing_content_limit: int = 2000
+    link_candidates_limit: int = 15
+    link_aliases_per_candidate: int = 3
+    keyword_min_length: int = 5
+    keyword_source_limit: int = 3000
+    related_pages_limit: int = 10
+    retry_temperature: float = 0.0
+    default_confidence: float = 0.8
+    conflict_context_limit: int = 600
+    skill_extraction_limit: int = 800
 
 
 @dataclass

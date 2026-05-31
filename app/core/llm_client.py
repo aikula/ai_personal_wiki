@@ -56,6 +56,7 @@ class LLMClient:
         self._context_window_tokens = (
             settings.llm.context_window_tokens or self._detect_context_window()
         )
+        self.default_max_completion_tokens = settings.llm.max_completion_tokens
 
     def _detect_context_window(self) -> int:
         """Best-effort context window detection from API. Falls back to 128K."""
@@ -101,7 +102,7 @@ class LLMClient:
         request_temperature = (
             self.default_temperature if temperature is None else temperature
         )
-        effective_max = max_tokens or 4096
+        effective_max = max_tokens or self.default_max_completion_tokens
         system, prompt = self._validate_context_budget(system, prompt, effective_max)
         kwargs = dict(
             model=self.model,
