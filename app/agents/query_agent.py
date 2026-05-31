@@ -637,10 +637,16 @@ class QueryAgent:
                 prompt=summary_text,
                 temperature=0.0,
             )
+            summary_content = f"[Conversation summary] {compressed.strip()}"
+            # Collect cited_slugs from both the summary text and original messages
+            preserved_slugs = list(dict.fromkeys(
+                s for m in to_summarize for s in m.cited_slugs
+            ))
             summary_msg = ChatMessage(
                 role="assistant",
-                content=f"[Conversation summary] {compressed.strip()}",
+                content=summary_content,
                 timestamp=to_summarize[-1].timestamp if to_summarize else now_iso(),
+                cited_slugs=preserved_slugs,
             )
             # Replace old messages with summary, keep last 2
             keep_from = non_tool[-2]

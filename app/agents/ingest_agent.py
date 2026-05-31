@@ -459,16 +459,32 @@ print(json.dumps(result))
         type_lower = conflict_type.lower()
         desc_lower = (description or "").lower()
 
+        # Generic words that match too many skill lines — exclude from matching
+        stop_terms = {
+            "conflict", "конфликт", "conflicts", "конфликты",
+            "different", "разные", "difference", "различие",
+            "page", "страница", "source", "источник",
+            "update", "обновление", "data", "данные",
+            "factual", "фактический", "resolution", "решение",
+        }
+
         # Search each skill line for relevance to conflict type
         for line in skills_raw.splitlines():
             line = line.strip()
             if not line or line.startswith("#") or line.startswith("<!--"):
                 continue
             line_lower = line.lower()
-            # Check if this skill line covers the conflict type or key terms
-            conflict_terms = type_lower.replace("_", " ").split() + desc_lower.split()[:5]
-            match_count = sum(1 for term in conflict_terms if len(term) > 3 and term in line_lower)
-            if match_count >= 2:
+            # Extract specific terms from conflict type and description
+            conflict_terms = type_lower.replace("_", " ").split() + desc_lower.split()[:8]
+            specific_terms = [
+                t for t in conflict_terms
+                if len(t) > 3 and t not in stop_terms
+            ]
+            if len(specific_terms) < 2:
+                continue
+            match_count = sum(1 for term in specific_terms if term in line_lower)
+            # Require 3+ specific term matches to auto-resolve
+            if match_count >= 3:
                 resolution = f"auto_skill: {line}"
                 self.fs.resolve_conflict(
                     conflict_id=conflict_id,
@@ -809,16 +825,14 @@ print(json.dumps(result))
             normalized = str(data.get("normalized") or quote).strip()
             if not normalized:
                 continue
-            if self.fs.find_duplicate_claim(normalized, source_id):
-                # Mark existing duplicate as superseded by the new claim
-                existing = self.fs.find_duplicate_claim(normalized, source_id)
-                if existing:
-                    self.fs.update_claim_status(
-                        existing.claim_id, existing.project,
-                        existing.source_id, existing.chunk_id,
-                        "superseded",
-                    )
-                    logger.info("Claim superseded (fuzzy dedup): %s -> %s", existing.claim_id, source_id)
+            existing = self.fs.find_duplicate_claim(normalized, source_id)
+            if existing:
+                self.fs.update_claim_status(
+                    existing.claim_id, existing.project,
+                    existing.source_id, existing.chunk_id,
+                    "superseded",
+                )
+                logger.info("Claim superseded (fuzzy dedup): %s -> %s", existing.claim_id, source_id)
                 continue
             chunk_id = str(data.get("chunk_id") or "chunk-000")
             claim_id = str(data.get("claim_id") or f"{source_id}#{chunk_id}-claim-{idx:03d}")

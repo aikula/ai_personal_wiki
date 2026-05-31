@@ -234,7 +234,11 @@ def chunk_by_outline(
                 max_chars=max_chars,
                 min_chars=min_chars,
                 base_index=len(chunks),
+                overlap=overlap,
+                previous_tail=previous_tail,
             )
+            if sub_chunks:
+                previous_tail = sub_chunks[-1].text[-overlap:] if overlap and len(sub_chunks[-1].text) > overlap else ""
             chunks.extend(sub_chunks)
 
     logger.info(
@@ -267,6 +271,8 @@ def _split_section(
     max_chars: int,
     min_chars: int,
     base_index: int,
+    overlap: int = 0,
+    previous_tail: str = "",
 ) -> list[Chunk]:
     """
     Split a large section into sub-chunks at natural boundaries.
@@ -293,20 +299,24 @@ def _split_section(
             sub_level = len(match.group(1))
 
             if len(sub_text) > max_chars:
-                # Recursively split
                 sub_path = [*section_path, sub_heading]
+                first_tail = previous_tail if i == 0 and previous_tail else ""
                 deeper = _split_section(
                     sub_text, sub_path, source_path, sub_heading, sub_level,
                     target_chars, max_chars, min_chars, base_index + len(chunks),
+                    overlap=overlap, previous_tail=first_tail,
                 )
                 chunks.extend(deeper)
             else:
+                text = sub_text
+                if i == 0 and previous_tail and overlap and len(text) > overlap:
+                    text = previous_tail + "\n--- CONTINUED ---\n" + text
                 chunks.append(Chunk(
                     chunk_id=f"chunk-{base_index + len(chunks) + 1:03d}",
                     source_path=source_path,
                     section_path=[*section_path, sub_heading],
-                    text=sub_text,
-                    char_count=len(sub_text),
+                    text=text,
+                    char_count=len(text),
                     split_reason="outline",
                     headings=[{"text": heading_text, "level": heading_level},
                               {"text": sub_heading, "level": sub_level}],
@@ -315,7 +325,7 @@ def _split_section(
 
     # Try paragraph boundaries
     paragraphs = re.split(r"(\n\n+)", section_text)
-    current_text = ""
+    current_text = previous_tail + "\n--- CONTINUED ---\n" if previous_tail and overlap else ""
     current_headings = [{"text": heading_text, "level": heading_level}]
 
     for part in paragraphs:

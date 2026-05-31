@@ -1020,7 +1020,6 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         """
         manifest = self._read_manifest()
         sha = self._sha256(content)
-        datetime.now().isoformat(timespec="seconds")
 
         if relative_path in manifest:
             entry = manifest[relative_path]
