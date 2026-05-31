@@ -812,16 +812,36 @@ function AuthProvider({ children }) {
 
   useEffect(() => {
     (async () => {
+      const token = sessionStorage.getItem('wiki_token');
+      const clearStaleToken = () => {
+        if (token) sessionStorage.removeItem('wiki_token');
+      };
+
       try {
         const r = await fetch('/api/auth/me', {
-          headers: sessionStorage.getItem('wiki_token')
-            ? { 'Authorization': `Bearer ${sessionStorage.getItem('wiki_token')}` }
-            : {},
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {},
         });
         if (r.ok) {
           const data = await r.json();
-          setAuthState({ loading: false, mode: 'multi_user', user: data.user, credits: data.credits });
+          if (data?.credits && data?.workspace) {
+            setAuthState({ loading: false, mode: 'multi_user', user: data.user, credits: data.credits });
+          } else {
+            clearStaleToken();
+            const hr = await fetch('/api/health');
+            if (hr.ok) {
+              const health = await hr.json();
+              setAuthState({
+                loading: false,
+                mode: health.mode || 'personal_local',
+                user: null,
+                credits: null,
+              });
+            } else {
+              setAuthState({ loading: false, mode: 'personal_local', user: null, credits: null });
+            }
+          }
         } else {
+          clearStaleToken();
           const hr = await fetch('/api/health');
           if (hr.ok) {
             const data = await hr.json();
@@ -836,6 +856,7 @@ function AuthProvider({ children }) {
           }
         }
       } catch {
+        clearStaleToken();
         setAuthState({ loading: false, mode: 'personal_local', user: null, credits: null });
       }
     })();
@@ -889,7 +910,7 @@ function AuthProvider({ children }) {
 
   const refreshCredits = async () => {
     const token = sessionStorage.getItem('wiki_token');
-    if (!token) return;
+    if (!token || authState.mode !== 'multi_user') return;
     try {
       const r = await fetch('/api/usage/me', {
         headers: getAuthHeaders(),
@@ -897,6 +918,9 @@ function AuthProvider({ children }) {
       if (r.ok) {
         const data = await r.json();
         setAuthState(prev => ({ ...prev, credits: { daily: data.daily, welcome: data.welcome } }));
+      } else if (r.status === 400 || r.status === 401) {
+        sessionStorage.removeItem('wiki_token');
+        setAuthState(prev => ({ ...prev, mode: 'personal_local', user: null, credits: null }));
       }
     } catch {}
   };
