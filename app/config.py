@@ -47,7 +47,7 @@ class LLMSettings:
     temperature: float = 0.1
     timeout_seconds: int = 60
     context_window_tokens: int = 0  # 0 = auto-detect, fallback 128K
-    max_completion_tokens: int = 8000
+    max_completion_tokens: int = 16000
 
 
 @dataclass
@@ -56,8 +56,8 @@ class LimitsSettings:
     skills_md_chars: int = 8_750
     index_l0_chars: int = 10_500
     index_l1_chars: int = 10_000
-    entity_page_chars: int = 8_000
-    concept_page_chars: int = 10_000
+    entity_page_chars: int = 10_000
+    concept_page_chars: int = 14_000
     log_md_chars: int = 3_500
     conflicts_md_chars: int = 35_000
 
@@ -75,10 +75,10 @@ class IngestSettings:
     chunk_max_chars: int = 25_000
     chunk_overlap_chars: int = 750
     max_pages_per_batch: int = 10
-    max_auto_write_pages: int = 100
+    max_auto_write_pages: int = 150
     require_review_if_pages_gt: int = 150
     # Thresholds (extracted from hardcoded values)
-    max_completion_tokens: int = 4000
+    max_completion_tokens: int = 8000
     existing_content_limit: int = 2000
     link_candidates_limit: int = 15
     link_aliases_per_candidate: int = 3
