@@ -574,7 +574,9 @@ print(json.dumps(result))
         6. Generate pages (Step 2 per planned page)
         7. Update Source Card with results
         """
-        source_id = raw_relative_path.replace("/", "_", 1).rsplit(".", 1)[0]
+        source_id = slugify(raw_relative_path.replace("/", "_", 1).rsplit(".", 1)[0])
+        if not source_id:
+            return IngestResult(success=False, error=f"Invalid filename for source_id: {raw_relative_path}")
         sha256 = self.fs.compute_source_sha256(source_content)
         today = date.today().isoformat()
 
