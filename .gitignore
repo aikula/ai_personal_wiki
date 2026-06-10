@@ -44,6 +44,11 @@ docs/QA01.md
 docs/REVIEW_STAGE1.md
 docs/wiki_engine_improvement_plan.md
 
+# Node
+node_modules/
+package.json
+package-lock.json
+
 # Test
 .pytest_cache/
 .coverage
