@@ -399,6 +399,8 @@ Pages: 0 | Projects: 0 | Open conflicts: 0
         pages = []
         for path in sorted(self.wiki_dir.rglob("*.md")):
             slug = path.relative_to(self.wiki_dir).with_suffix("").as_posix()
+            if slug.startswith(("_claims/", "_sources/")) or slug.startswith("."):
+                continue
             page = self._parse_page(path, slug)
             if page is None:
                 continue
