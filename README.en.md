@@ -1,14 +1,67 @@
-# Wiki Engine
+# Enterprise Knowledge Compiler
 
 > [Русская версия](README.ru.md)
 
-LLM-powered personal wiki from markdown documents. Ingests raw documents (`.md`, `.txt`, `.py`, `.pdf`, `.docx`, `.pptx`), builds a structured knowledge base with cross-linked pages, detects conflicts between sources, accumulates reusable rules, and answers questions via LLM — all stored as plain text files. **No databases. No vector embeddings.** Pure markdown knowledge base.
+**Enterprise Knowledge Compiler** is an open-source LLM-powered system that turns raw documents into a structured, auditable, conflict-aware knowledge base.
+
+It ingests source documents (`.md`, `.txt`, `.py`, `.pdf`, `.docx`, `.pptx`), creates cross-linked wiki pages, preserves provenance to raw sources, detects contradictions, accumulates reusable resolution rules, and answers questions via LLM with citations. The public edition keeps the knowledge layer as plain text files and avoids mandatory databases or vector embeddings.
 
 > **Inspired by** [Andrej Karpathy's llm-wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) — the idea of an LLM-maintained structured wiki from raw source documents.
 
+## Positioning
+
+This project is not intended to be another generic "chat with documents" wrapper. Standard RAG usually retrieves fragments from the existing document mess. Enterprise Knowledge Compiler first tries to compile that mess into a durable knowledge layer:
+
+- source documents become structured pages;
+- generated pages keep stable slugs, frontmatter, links, and provenance;
+- contradictions become explicit conflicts;
+- expert decisions become reusable rules in `skills.md`;
+- structural audits find duplicates, overlaps, broken links, stale facts, and invalid provenance;
+- the resulting knowledge base can be queried by people, assistants, and AI agents.
+
+## Editions
+
+| Edition | Status | Best for | Storage/control plane |
+|---|---|---|---|
+| Open-source local edition | Public repository | Personal research, local knowledge work, demos | Plain files in `wiki-data/` |
+| Open-source server edition | Public repository | Private VPS or small team demo | Plain files, optional Basic Auth |
+| Open-source multi-user edition | Public repository | Small hosted demo, isolated user workspaces, token metering | Plain files + SQLite control plane |
+| Corporate implementation | Paid pilot / adaptation / rollout | Document-heavy and regulated organizations | Plain knowledge layer + PostgreSQL control plane, SSO/RBAC, audit, connectors, review workflows |
+
+The corporate implementation is not described as a finished shrink-wrapped product. It is a hardened version of the same knowledge-compilation approach, adapted through a paid pilot to the customer's documents, infrastructure, security model, and operating processes.
+
 ## What It Does
 
-Drop your documents into a folder — the system analyzes them, creates wiki pages with cross-links, finds contradictions, and lets you ask questions across the entire knowledge base.
+Drop documents into the system. It analyzes them, creates wiki pages with cross-links, finds contradictions, and lets you ask questions across the generated knowledge base.
+
+Public edition capabilities:
+
+- multi-format ingest;
+- two-step LLM pipeline: analysis first, page generation second;
+- generated wiki pages with structured frontmatter;
+- provenance markers linking back to raw files;
+- conflict detection and manual resolution;
+- reusable rules extracted from resolved conflicts;
+- structural linting and audit;
+- multi-project knowledge organization;
+- local/server/multi-user modes.
+
+## Corporate implementation roadmap
+
+For corporate customers, the project can be extended into an enterprise implementation with:
+
+- PostgreSQL control plane for users, workspaces, audit events, permissions, usage, and job metadata;
+- SSO/OIDC/SAML or customer identity integration;
+- RBAC and workspace/team access control;
+- large-volume document pipelines;
+- source cards, claims layer, source drift tracking, and stronger provenance;
+- expert review workflows for semantic changes;
+- connectors to SharePoint, Google Drive, Confluence, Jira, file shares, object storage, DMS/ECM systems;
+- deployment on customer infrastructure, private cloud, or controlled regional cloud;
+- observability, job queues, backups, and operational runbooks;
+- Arabic/English corporate demo packs and domain-specific pilots.
+
+See [`docs/corporate_edition_roadmap.md`](docs/corporate_edition_roadmap.md) for the enterprise pilot specification.
 
 ## How to Use — Step by Step
 
@@ -271,110 +324,19 @@ ollama run qwen2.5:14b
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/auth/register` | Register new user |
-| `POST` | `/api/auth/login` | Login (Email + password → Bearer token) |
-| `POST` | `/api/auth/logout` | Logout (revoke token) |
-| `GET` | `/api/auth/me` | Current user info, workspace, quotas |
+| `POST` | `/api/auth/login` | Login and receive Bearer token |
+| `POST` | `/api/auth/logout` | Logout and revoke token |
+| `GET` | `/api/auth/me` | Current user, workspace, and quota state |
 
-### Admin (server settings)
+### Usage (multi-user)
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/admin/settings` | Current LLM settings (api_key masked) |
-| `POST` | `/api/admin/settings` | Update LLM settings |
-| `GET` | `/api/admin/settings/language` | Interface language |
-| `GET` | `/api/admin/settings/test` | Test LLM connectivity |
-
-### Usage (quotas, multi-user)
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/usage/me` | Current token usage and quota state |
+| `GET` | `/api/usage/me` | Current token usage and quotas |
 
 ### Health
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/health` | Health check |
-
----
-
-## Supported Formats
-
-| Format | Extension | Processing |
-|--------|-----------|------------|
-| Markdown | `.md` | Direct ingest |
-| Plain text | `.txt` | Direct ingest |
-| Python | `.py` | Direct ingest |
-| PDF | `.pdf` | Converted via markitdown |
-| Word | `.docx` | Converted via markitdown |
-| PowerPoint | `.pptx` | Converted via markitdown |
-
----
-
-## Project Structure
-
-```
-wiki-engine/
-├── app/
-│   ├── agents/              # LLM agents: ingest, query, audit
-│   ├── core/                # Business logic: wiki_fs, linter, interpreter,
-│   │   │                    # search_provider, safe_page_updates, large_source_ingest,
-│   │   │                    # token_budget, raw_sources, llm_client, metered_llm_client,
-│   │   │                    # context, control_store, utils, migrations/
-│   ├── api/                 # FastAPI: routes, models, dependencies
-│   └── ui/
-│       └── index.html       # React SPA (no build step)
-├── wiki-data/               # Data volume (Docker mount)
-│   ├── raw/                 # Source documents
-│   ├── wiki/                # Generated wiki pages
-│   ├── drafts/              # Pending drafts
-│   ├── conflicts.md         # Conflict queue
-│   └── skills.md            # Accumulated rules
-├── config/settings.yaml     # Configuration
-└── tests/                   # pytest suite
-```
-
----
-
-## Multi-User Mode
-
-Wiki Engine supports three app modes (`APP_MODE`):
-
-| Mode | Description |
-|---|---|
-| `personal_local` | Local setup, no authentication, no quotas |
-| `personal_server` | Server with Basic Auth (`WIKI_AUTH_ENABLED=true`) |
-| `multi_user` | Multi-user: registration, Bearer tokens, token quotas, isolated workspaces |
-
-In multi-user mode:
-- **Registration**: `POST /api/auth/register` — creates user, workspace, and credit buckets
-- **Quotas**: daily limit (`DEFAULT_DAILY_TOKENS`) + welcome bonus (`DEFAULT_WELCOME_TOKENS`), tracked via `MeteredLLMClient`
-- **Isolation**: each user gets a separate workspace at `/wiki-data/workspaces/{user_id}/`
-- **SQLite control plane**: accounts, sessions, quotas in `/wiki-data/control.db` (migrations in `app/core/migrations/`)
-- **Admins**: emails from `MULTI_USER_ADMIN_EMAILS` get admin privileges on creation
-
-## Code Interpreter Sandbox
-
-The built-in interpreter (`CodeInterpreter`) runs code in an isolated subprocess with three protection layers:
-
-1. **AST analysis**: code is scanned before execution — dangerous imports (`os`, `subprocess`, `socket`, `requests`…), calls (`eval`, `exec`, `__import__`, `open(mode='w')`…) are blocked
-2. **Resource limits (POSIX)**: CPU limited to timeout, memory capped at 256 MB, max file size 1 MB
-3. **Timeout**: 10 second hard limit on execution
-
-The Docker container runs as a non-root user (`appuser`, uid 1000).
-
----
-
-## Development
-
-### Tests
-```bash
-pip install -e ".[dev]"
-pytest tests/ -v    # pytest suite: WikiFS, Linter, API, Auth, Interpreter, Sandbox, SafePageUpdates,
-                    # LargeSourceIngest, TokenBudget, MeteredLLM, Utils, BrowserAuthFlow, Regressions
-```
-
-### Lint
-```bash
-ruff check app/ tests/
-```
 
 ---
 
