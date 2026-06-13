@@ -1,0 +1,9 @@
+This directory contains vendored copies of third-party JavaScript
+libraries used by the Wiki Engine UI. All libraries are MIT-licensed.
+
+react (18.x)          — https://github.com/facebook/react
+react-dom (18.x)     — https://github.com/facebook/react
+@babel/standalone    — https://github.com/babel/babel
+
+Full license texts: https://github.com/facebook/react/blob/main/LICENSE
+                    https://github.com/babel/babel/blob/main/LICENSE

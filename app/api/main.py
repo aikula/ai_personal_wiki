@@ -182,6 +182,11 @@ async def health():
 _UI_DIR = Path(__file__).parent.parent / "ui"
 
 if _UI_DIR.exists():
+    # Vendor scripts (React, Babel — vendored for offline use)
+    vendor = _UI_DIR / "vendor"
+    if vendor.exists():
+        app.mount("/vendor", StaticFiles(directory=str(vendor)), name="vendor")
+
     # Static assets (CSS, JS if any)
     assets = _UI_DIR / "assets"
     if assets.exists():
