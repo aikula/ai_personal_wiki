@@ -487,12 +487,11 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 **No file should exceed 500 lines without a justified exception.**
 
 Exceptions (must be documented here):
-- `app/ui/index.html` (1500+ lines) — single-file React app, cannot split by design
-- `app/core/wiki_fs.py` (1360+ lines) — single source of truth for all filesystem ops
-- `app/agents/ingest_agent.py` (540+ lines) — complex ingest pipeline logic
+- `app/ui/index.html` (3012+ lines) — single-file React app, cannot split by design
+- `app/core/wiki_fs.py` (2505+ lines) — single source of truth for all filesystem ops
+- `app/agents/ingest_agent.py` (1120+ lines) — complex ingest pipeline logic; was split once (761→449) but grew back; needs another split
 
 All other files MUST stay under 500 lines. When modifying a file that exceeds the limit, prioritize splitting over adding code.
 
-No current violations. Resolved:
-- `app/agents/ingest_agent.py` 761→449 lines — split into `ingest_types.py` (52), `ingest_prompts.py` (109), `ingest_helpers.py` (121), `ingest_agent.py` (449)
+Resolved:
 - `app/agents/query_agent.py` 729→424 lines — split into `query_types.py` (51), `query_prompts.py` (114), `query_search.py` (381), `query_agent.py` (424)
