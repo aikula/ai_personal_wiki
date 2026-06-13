@@ -14,7 +14,6 @@ No databases. No vector embeddings in Phase 1.
 wiki-engine/
 ├── app/
 │   ├── agents/
-│   │   ├── ingest_agent.py       # Plan-and-Execute ingest pipeline
 │   │   ├── ingest_agent.py       # Plan-and-Execute ingest pipeline (orchestrator)
 │   │   ├── ingest_helpers.py     # Standalone ingest helper functions
 │   │   ├── ingest_prompts.py     # Ingest prompt templates
@@ -39,16 +38,21 @@ wiki-engine/
 │   │   ├── wiki_raw.py           # Raw file operations (list, read, save)
 │   │   ├── wiki_index.py         # Index rebuild, bootstrap, full reset
 │   │   ├── wiki_log.py           # Skills.md and log.md operations
-│   │   ├── wiki_updates.py       # Safe page updates with diff generation
+│   │   ├── wiki_updates.py       # apply_safe_update, generate_update_diff
 │   │   ├── wiki_cleanup.py       # Orphan conflict cleanup, archive resolved
 │   │   ├── wiki_fix.py           # fix_broken_wikilinks repair
 │   │   ├── wiki_utils.py         # parse_page, slug_to_path, resolve_in_dir
 │   │   ├── linter.py             # WikiLinter: structural checks
+│   │   ├── linter_checks_sources.py  # Source provenance / drift / orphan checks
 │   │   ├── interpreter.py        # Sandboxed Python code interpreter
 │   │   ├── llm_client.py         # OpenAI-compatible client wrapper
 │   │   ├── token_budget.py       # Symbol/token counting utilities
 │   │   ├── large_source_ingest.py # Outline parser, chunking, merge analysis
-│   │   ├── safe_page_updates.py  # Typed page operations with diff generation
+│   │   ├── large_source_types.py # OutlineItem, Chunk, ChunkAnalysisResult, etc.
+│   │   ├── safe_page_updates.py  # Typed ops: replace_section, append_section
+│   │   ├── control_store.py      # Protocol + dataclasses for multi-user control
+│   │   ├── control_store_sqlite.py   # SQLiteControlStore implementation
+│   │   ├── control_store_noop.py     # NoopControlStore (single-user mode)
 │   │   └── search_provider.py    # Abstract search interface (weighted/BM25)
 │   ├── api/
 │   │   ├── main.py               # FastAPI app entrypoint
@@ -61,7 +65,8 @@ wiki-engine/
 │   │   └── models.py             # Pydantic request/response models
 │   ├── ui/
 │   │   ├── index.html            # Single-file React app (no build step)
-│   │   └── assets/
+│   │   ├── assets/
+│   │   └── vendor/               # Vendored React/Babel (MIT) for offline use
 ├── wiki-data/                    # MOUNTED VOLUME — never commit
 │   ├── raw/                      # Source documents
 │   │   ├── _general/             # Cross-project documents
