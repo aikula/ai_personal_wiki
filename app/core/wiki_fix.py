@@ -18,6 +18,10 @@ def fix_broken_wikilinks(fs, project: str | None = None) -> int:
     an existing page. Before removing, attempts to normalize the slug
     (lowercase, replace underscores with hyphens) and check again.
     Returns the number of pages modified.
+
+    Index and log pages are always skipped: log.md is append-only history
+    and stripping its wikilinks would silently erase references to pages
+    that were later removed/superseded.
     """
     all_pages = fs.list_pages()
     existing_slugs = {p.slug for p in all_pages}
@@ -28,6 +32,8 @@ def fix_broken_wikilinks(fs, project: str | None = None) -> int:
         return slug.strip().lower().replace("_", "-")
 
     for page in all_pages:
+        if page.page_type in ("index", "log"):
+            continue
         if project and page.project != project:
             continue
         original = page.raw

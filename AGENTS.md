@@ -42,31 +42,47 @@ wiki-engine/
 │   │   ├── wiki_cleanup.py       # Orphan conflict cleanup, archive resolved
 │   │   ├── wiki_fix.py           # fix_broken_wikilinks repair
 │   │   ├── wiki_utils.py         # parse_page, slug_to_path, resolve_in_dir
+│   │   ├── utils.py              # slugify, validate_slug/project/filename, normalize_wikilinks
+│   │   ├── context.py            # WorkspaceContext: paths, settings, control store handle
 │   │   ├── linter.py             # WikiLinter: structural checks
+│   │   ├── linter_models.py      # LintIssue, LintReport dataclasses
 │   │   ├── linter_checks_sources.py  # Source provenance / drift / orphan checks
 │   │   ├── interpreter.py        # Sandboxed Python code interpreter
 │   │   ├── llm_client.py         # OpenAI-compatible client wrapper
+│   │   ├── metered_llm_client.py # Output-token billing wrapper (multi-user mode)
 │   │   ├── token_budget.py       # Symbol/token counting utilities
 │   │   ├── large_source_ingest.py # Outline parser, chunking, merge analysis
 │   │   ├── large_source_types.py # OutlineItem, Chunk, ChunkAnalysisResult, etc.
+│   │   ├── raw_sources.py        # Binary source I/O + MarkItDown + project inference
 │   │   ├── safe_page_updates.py  # Typed ops: replace_section, append_section
 │   │   ├── control_store.py      # Protocol + dataclasses for multi-user control
 │   │   ├── control_store_sqlite.py   # SQLiteControlStore implementation
 │   │   ├── control_store_noop.py     # NoopControlStore (single-user mode)
-│   │   └── search_provider.py    # Abstract search interface (weighted/BM25)
+│   │   ├── search_provider.py    # Abstract search interface (weighted/BM25)
+│   │   └── migrations/
+│   │       └── runner.py         # SQLite schema migration runner
 │   ├── api/
 │   │   ├── main.py               # FastAPI app entrypoint
+│   │   ├── dependencies.py       # FastAPI deps: get_wiki_fs, get_ingest_agent, get_settings
+│   │   ├── session_store.py      # Per-session chat history persistence
 │   │   ├── routes/
 │   │   │   ├── ingest.py         # POST /ingest, POST /rebuild
 │   │   │   ├── chat.py           # POST /chat, GET /chat/history
 │   │   │   ├── wiki.py           # GET /wiki/tree, GET /wiki/page
-│   │   │   ├── conflicts.py      # GET/POST /conflicts
-│   │   │   └── settings.py       # GET/POST /settings
+│   │   │   ├── conflicts.py      # GET/POST /conflicts (+ prepare/apply/reject-update)
+│   │   │   ├── sources_api.py    # Source cards CRUD
+│   │   │   ├── settings.py       # GET/POST /settings
+│   │   │   ├── audit.py          # POST /audit/lint, /audit/lint/fix-wikilinks
+│   │   │   ├── auth.py           # Login/token endpoints (multi-user mode)
+│   │   │   ├── onboarding.py     # GET /onboarding/status, POST /onboarding/seed-demo
+│   │   │   └── usage.py          # Token usage stats (multi-user)
 │   │   └── models.py             # Pydantic request/response models
 │   ├── ui/
 │   │   ├── index.html            # Single-file React app (no build step)
 │   │   ├── assets/
 │   │   └── vendor/               # Vendored React/Babel (MIT) for offline use
+│   ├── seed_data/                # Onboarding demo dataset (SmartLight IoT)
+│   └── config.py                 # Settings dataclass + YAML loader
 ├── wiki-data/                    # MOUNTED VOLUME — never commit
 │   ├── raw/                      # Source documents
 │   │   ├── _general/             # Cross-project documents
@@ -78,6 +94,7 @@ wiki-engine/
 │   │   ├── _sources/             # Source Cards (Phase 1B+)
 │   │   ├── _claims/              # Individual claims (Phase 3)
 │   │   └── <project_name>/       # Per-project wiki pages
+│   ├── drafts/                   # Ephemeral working dir (see exception below)
 │   ├── conflicts.md              # Conflict queue (unresolved + resolved)
 │   ├── skills.md                 # Accumulated rules and patterns
 │   └── AGENTS.md                 # Domain-specific LLM instructions (editable)
@@ -97,6 +114,13 @@ wiki-engine/
 - No SQLite, no JSON state files, no pickle — only Markdown
 - Every operation that changes wiki MUST go through `wiki_fs.py`
 - `wiki_fs.py` is the ONLY module allowed to write to `wiki-data/`
+
+**Exception — `wiki-data/drafts/`:** ephemeral working directory for
+prepare/apply/reject workflows (conflict resolution drafts, ingest
+update drafts). Direct writes from agents and routes are allowed here
+because drafts are scratch state — they are removed after apply/reject
+and never committed. `wiki_fs.py` is still the source of truth for the
+`drafts_dir` path itself.
 
 ### 2. File size limits (in CHARACTERS, not tokens; 1 token ≈ 3.5 chars)
 ```
@@ -124,7 +148,7 @@ boundary), never mechanical (never split mid-sentence or mid-section).
 ### 3. Every wiki page has frontmatter
 Required fields — agent MUST include all of them:
 ```yaml
-***
+---
 title: <human readable title>
 project: <project_name | _general>
 type: <entity | concept | index | log | source>
@@ -135,7 +159,7 @@ last_confirmed: <YYYY-MM-DD>
 supersedes: null
 superseded_by: null
 created: <YYYY-MM-DD>
-***
+---
 ```
 
 ### 3.1. New namespaces (Phase 1B+)
