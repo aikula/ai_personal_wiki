@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 import yaml
 
@@ -17,6 +18,7 @@ from app.agents.ingest_types import (
     DetectedConflict,
     PlannedPage,
 )
+from app.config import Settings
 from app.core.utils import slugify
 
 
@@ -163,3 +165,52 @@ ANALYSIS_SCHEMA_HINT = """{
   "skills_triggered": [str],
   "analysis_notes": str
 }"""
+
+
+def format_source_sections(sections: list[str], settings: Settings, max_chars: int | None = None) -> str:
+    """Fit relevant source fragments into Step 2 without falling back to full-source prefix."""
+    if not sections:
+        return "(no source sections assigned)"
+    limit = max_chars or min(settings.query.context_budget_chars, 24_000)
+    parts = []
+    used = 0
+    for section in sections:
+        text = section.strip()
+        if not text:
+            continue
+        separator = "\n\n---\n\n" if parts else ""
+        remaining = limit - used - len(separator)
+        if remaining <= 0:
+            break
+        if len(text) > remaining:
+            text = text[:max(0, remaining - 18)].rstrip() + "\n[TRUNCATED]"
+        parts.append(separator + text)
+        used += len(separator) + len(text)
+    return "".join(parts) if parts else "(no source sections assigned)"
+
+
+def derive_tags(slug: str, source_file: str) -> list[str]:
+    """Auto-fill tags from slug category and source file name."""
+    tags = []
+    parts = slug.split("/")
+    if len(parts) >= 2:
+        tags.append(parts[-2])
+    if source_file:
+        stem = source_file.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+        if stem and stem not in tags:
+            tags.append(stem)
+    return tags[:5]
+
+
+def char_limit_for_type(page_type: str, settings: Settings) -> int:
+    return {
+        "entity": settings.limits.entity_page_chars,
+        "concept": settings.limits.concept_page_chars,
+    }.get(page_type, settings.limits.entity_page_chars)
+
+
+def read_agents_md(root: Path) -> str:
+    path = root / "AGENTS.md"
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    return ""

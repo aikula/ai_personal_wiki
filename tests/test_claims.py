@@ -6,7 +6,8 @@ import pytest
 
 from app.agents.ingest_agent import IngestAgent
 from app.config import Settings
-from app.core.wiki_fs import Claim, WikiFS
+from app.core.wiki_fs import WikiFS
+from app.core.wiki_types import Claim
 
 
 @pytest.fixture

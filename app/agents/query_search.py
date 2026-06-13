@@ -10,7 +10,8 @@ import re
 
 from app.core.token_budget import ContextBudget
 from app.core.utils import extract_wikilinks
-from app.core.wiki_fs import Claim, WikiFS, WikiPage
+from app.core.wiki_fs import WikiFS, WikiPage
+from app.core.wiki_types import Claim
 
 logger = logging.getLogger("wiki.query")
 

@@ -15,16 +15,34 @@ wiki-engine/
 ├── app/
 │   ├── agents/
 │   │   ├── ingest_agent.py       # Plan-and-Execute ingest pipeline
+│   │   ├── ingest_agent.py       # Plan-and-Execute ingest pipeline (orchestrator)
 │   │   ├── ingest_helpers.py     # Standalone ingest helper functions
 │   │   ├── ingest_prompts.py     # Ingest prompt templates
 │   │   ├── ingest_types.py       # Ingest type definitions
+│   │   ├── ingest_retrieval.py   # Related page retrieval via CodeInterpreter
+│   │   ├── ingest_generate.py    # Page generation from merge/single source
+│   │   ├── ingest_large.py       # Large source chunked ingest pipeline
+│   │   ├── ingest_conflicts.py   # Conflict recording and auto-resolution
 │   │   ├── query_agent.py        # Policy-driven ReAct query agent
 │   │   ├── query_search.py       # Standalone query search/retrieval helpers
 │   │   ├── query_prompts.py      # Query prompt templates
 │   │   ├── query_types.py        # Query type definitions
 │   │   └── audit_agent.py        # Parallel structural audit
 │   ├── core/
-│   │   ├── wiki_fs.py            # All filesystem operations (single source of truth)
+│   │   ├── wiki_fs.py            # WikiFS class: init, page CRUD, thin wrappers
+│   │   ├── wiki_types.py         # Data models: WikiPage, SourceCard, Claim, etc.
+│   │   ├── wiki_search.py        # Weighted/BM25 search, tree, outline, sections
+│   │   ├── wiki_claims.py        # Claim CRUD, dedup, conflict detection
+│   │   ├── wiki_conflicts.py     # Conflict queue: append, resolve, archive
+│   │   ├── wiki_source.py        # Source cards, manifest, sha256 drift tracking
+│   │   ├── wiki_drafts.py        # Draft create/list/apply/reject
+│   │   ├── wiki_raw.py           # Raw file operations (list, read, save)
+│   │   ├── wiki_index.py         # Index rebuild, bootstrap, full reset
+│   │   ├── wiki_log.py           # Skills.md and log.md operations
+│   │   ├── wiki_updates.py       # Safe page updates with diff generation
+│   │   ├── wiki_cleanup.py       # Orphan conflict cleanup, archive resolved
+│   │   ├── wiki_fix.py           # fix_broken_wikilinks repair
+│   │   ├── wiki_utils.py         # parse_page, slug_to_path, resolve_in_dir
 │   │   ├── linter.py             # WikiLinter: structural checks
 │   │   ├── interpreter.py        # Sandboxed Python code interpreter
 │   │   ├── llm_client.py         # OpenAI-compatible client wrapper
@@ -488,10 +506,11 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 Exceptions (must be documented here):
 - `app/ui/index.html` (3012+ lines) — single-file React app, cannot split by design
-- `app/core/wiki_fs.py` (2505+ lines) — single source of truth for all filesystem ops
-- `app/agents/ingest_agent.py` (1120+ lines) — complex ingest pipeline logic; was split once (761→449) but grew back; needs another split
+- `app/core/wiki_fs.py` (772+ lines) — single source of truth for all filesystem ops; was split from 2505 lines
 
 All other files MUST stay under 500 lines. When modifying a file that exceeds the limit, prioritize splitting over adding code.
 
-Resolved:
+No current violations. Resolved:
 - `app/agents/query_agent.py` 729→424 lines — split into `query_types.py` (51), `query_prompts.py` (114), `query_search.py` (381), `query_agent.py` (424)
+- `app/agents/ingest_agent.py` 1120→392 lines — split into `ingest_retrieval.py` (62), `ingest_generate.py` (246), `ingest_large.py` (334), `ingest_conflicts.py` (169), `ingest_agent.py` (392)
+- `app/core/wiki_fs.py` 2505→772 lines — split into `wiki_types.py` (248), `wiki_search.py` (316), `wiki_claims.py` (239), `wiki_conflicts.py` (215), `wiki_source.py` (284), `wiki_drafts.py` (225), `wiki_raw.py` (81), `wiki_index.py` (232), `wiki_log.py` (104), `wiki_updates.py` (59), `wiki_cleanup.py` (98), `wiki_fix.py` (51), `wiki_utils.py` (60)

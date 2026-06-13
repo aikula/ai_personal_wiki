@@ -147,7 +147,7 @@ class TestClaimsInFactualPolicy:
 
     @patch("app.agents.query_agent.classify_question")
     def test_claims_retrieved_for_factual(self, mock_classify, query_agent):
-        from app.core.wiki_fs import Claim
+        from app.core.wiki_types import Claim
 
         agent, fs, llm = query_agent
 
@@ -195,7 +195,7 @@ class TestClaimsInReAct:
 
     @patch("app.agents.query_agent.classify_question")
     def test_search_claims_tool_in_react(self, mock_classify, query_agent):
-        from app.core.wiki_fs import Claim
+        from app.core.wiki_types import Claim
 
         agent, fs, llm = query_agent
 
@@ -241,7 +241,7 @@ class TestFormatClaimsForContext:
     """Verify format_claims_for_context output."""
 
     def test_formats_claims_with_wikilinks(self):
-        from app.core.wiki_fs import Claim
+        from app.core.wiki_types import Claim
         from app.agents.query_search import format_claims_for_context
 
         claim = Claim(

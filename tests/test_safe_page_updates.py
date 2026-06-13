@@ -18,7 +18,7 @@ from app.core.safe_page_updates import (
     validate_operation,
     validate_plan,
 )
-from app.core.wiki_fs import WikiFS, WikiFSError
+from app.core.wiki_fs import WikiFS
 
 
 @pytest.fixture
@@ -324,35 +324,36 @@ class TestWikiFSSafeUpdate:
     def test_apply_safe_update(self, fs):
         _make_page(fs, "test/safe", "# Intro\n\nOld text here.")
 
-        plan = PageWritePlan(
-            slug="test/safe",
-            operations=[ReplaceSection(heading="Intro", new_content="Much longer new text.")],
-        )
-        updated, diff = fs.apply_safe_update("test/safe", plan, force=True)
+        page = fs.read_page("test/safe")
+        new_raw = page.raw.replace("Old text here.", "Much longer new text.")
 
-        assert updated is not None
+        success, diff = fs.apply_safe_update("test/safe", new_raw, "test update")
+
+        assert success is True
+        assert diff is not None
+        assert "Old text" in diff
+        assert "Much longer new text." in diff
+
+        updated = fs.read_page("test/safe")
         assert "Much longer new text." in updated.content
-        assert diff.char_delta > 0
 
     def test_apply_safe_update_page_not_found(self, fs):
-        plan = PageWritePlan(slug="nonexistent/page")
-        with pytest.raises(WikiFSError):
-            fs.apply_safe_update("nonexistent/page", plan)
+        success, diff = fs.apply_safe_update("nonexistent/page", "# Content", "test")
+        assert success is False
+        assert diff is None
 
     def test_generate_update_diff(self, fs):
         _make_page(fs, "test/gendiff", "# Intro\n\nText.")
 
-        plan = PageWritePlan(
-            slug="test/gendiff",
-            operations=[ReplaceSection(heading="Intro", new_content="Changed.")],
-        )
-        diff = fs.generate_update_diff("test/gendiff", plan)
+        page = fs.read_page("test/gendiff")
+        new_raw = page.raw.replace("Text.", "Changed.")
+
+        diff = fs.generate_update_diff("test/gendiff", new_raw)
 
         assert diff is not None
-        assert diff.slug == "test/gendiff"
-        assert len(diff.diff_lines) > 0
+        assert "Text." in diff
+        assert "Changed." in diff
 
     def test_generate_diff_nonexistent_page(self, fs):
-        plan = PageWritePlan(slug="nonexistent")
-        diff = fs.generate_update_diff("nonexistent", plan)
+        diff = fs.generate_update_diff("nonexistent", "# Content")
         assert diff is None

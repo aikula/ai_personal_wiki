@@ -5,12 +5,12 @@ import pytest
 from app.config import Settings
 from app.core.wiki_fs import (
     CharLimitExceededError,
-    ConflictEntry,
     FrontmatterError,
     IngestLog,
     SlugConflictError,
     WikiFS,
 )
+from app.core.wiki_types import ConflictEntry
 
 
 @pytest.fixture
