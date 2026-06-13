@@ -9,6 +9,12 @@ import logging
 import threading
 from datetime import date, datetime
 
+from app.agents.ingest_conflicts import (
+    extract_skill_from_resolution,
+    record_conflicts,
+    try_auto_resolve_conflict,
+)
+from app.agents.ingest_generate import retry_compact_page
 from app.agents.ingest_helpers import (
     ANALYSIS_SCHEMA_HINT,
     build_system_prompt,
@@ -21,20 +27,14 @@ from app.agents.ingest_helpers import (
     read_agents_md,
     render_page_raw,
 )
-from app.agents.ingest_large import run_large_ingest, analyze_chunk, persist_claims
-from app.agents.ingest_retrieval import build_wiki_context, find_related_pages
-from app.agents.ingest_generate import retry_compact_page
-from app.agents.ingest_conflicts import (
-    extract_skill_from_resolution,
-    record_conflicts,
-    try_auto_resolve_conflict,
-)
+from app.agents.ingest_large import analyze_chunk, persist_claims, run_large_ingest
 from app.agents.ingest_prompts import (
     STEP1_PROMPT,
     STEP1_SYSTEM,
     STEP2_PROMPT,
     STEP2_SYSTEM,
 )
+from app.agents.ingest_retrieval import build_wiki_context, find_related_pages
 from app.agents.ingest_types import AnalysisResult, IngestResult
 from app.config import Settings, language_instruction
 from app.core.interpreter import CodeInterpreter

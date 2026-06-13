@@ -7,7 +7,6 @@ import json
 import logging
 import re
 from datetime import datetime
-from pathlib import Path
 
 from app.core.wiki_types import ConflictEntry
 

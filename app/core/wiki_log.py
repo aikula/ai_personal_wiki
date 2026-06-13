@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime
-from pathlib import Path
 
 from app.core.wiki_types import CharLimitExceededError, IngestLog
 

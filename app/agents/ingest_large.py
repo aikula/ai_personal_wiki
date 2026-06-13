@@ -22,7 +22,6 @@ from app.config import language_instruction
 from app.core.large_source_ingest import (
     Chunk,
     ChunkAnalysisResult,
-    MergeAnalysisResult,
     chunk_by_outline,
     merge_analysis,
     parse_outline,

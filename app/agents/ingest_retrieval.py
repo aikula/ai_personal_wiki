@@ -4,10 +4,7 @@ ingest_retrieval.py — Standalone retrieval helpers for the ingest pipeline.
 
 from __future__ import annotations
 
-import json
 import logging
-import re
-from pathlib import Path
 
 from app.core.interpreter import CodeInterpreter
 from app.core.token_budget import ContextBudget

@@ -5,14 +5,13 @@ wiki_types.py — Data models and types for WikiFS.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.utils import (
     extract_wikilinks,
     heading_to_anchor,
 )
-
 
 # ─────────────────────────────────────────────
 # Exceptions

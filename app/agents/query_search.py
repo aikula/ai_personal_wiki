@@ -4,7 +4,6 @@ query_search.py — Standalone search/retrieval helpers for the query pipeline.
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 
@@ -178,7 +177,6 @@ def compress_session_history(
     session,
 ) -> None:
     """Compress old messages via LLM summary when session has >4 messages."""
-    from datetime import datetime
 
     from app.core.utils import now_iso
 

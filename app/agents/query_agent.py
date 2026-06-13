@@ -41,7 +41,7 @@ from app.agents.query_search import (
     retrieve_claims,
     retrieve_pages,
 )
-from app.agents.query_types import ChatMessage, QueryResult
+from app.agents.query_types import ChatMessage, ChatSession, QueryResult
 from app.config import Settings
 from app.core.interpreter import CodeInterpreter
 from app.core.llm_client import LLMGateway

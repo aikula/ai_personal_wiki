@@ -151,7 +151,7 @@ async def ingest_batch(
 
     results = []
     skipped_details = []
-    for key, source_file in items:
+    for _key, source_file in items:
         try:
             response = await _save_and_ingest(project, source_file, agent, fs)
             results.append(response.model_dump())

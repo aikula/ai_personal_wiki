@@ -15,13 +15,15 @@ from __future__ import annotations
 
 import asyncio
 import difflib
-import frontmatter
 import json
 import re
 from typing import Annotated
 
+import frontmatter
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.agents.ingest_helpers import build_system_prompt
+from app.agents.ingest_prompts import STEP2_SYSTEM
 from app.api.dependencies import (
     IngestAgent,
     WikiFS,
@@ -35,9 +37,6 @@ from app.api.models import (
     ResolveConflictRequest,
     ResolveConflictResponse,
 )
-from app.agents.ingest_helpers import build_system_prompt
-from app.agents.ingest_prompts import STEP2_SYSTEM
-
 
 router = APIRouter(prefix="/api/conflicts", tags=["conflicts"])
 
@@ -226,7 +225,7 @@ async def prepare_conflict_update(
 
     # Generate unified diff
     existing_lines = existing_page.raw.splitlines(keepends=True)
-    new_lines = new_content.splitlines(keepends=True)
+    new_lines = updated_raw.splitlines(keepends=True)
     diff = list(difflib.unified_diff(
         existing_lines, new_lines,
         fromfile="existing.md", tofile="new.md",

@@ -11,10 +11,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.api.dependencies import get_ingest_agent, get_wiki_fs
 from app.agents.ingest_agent import IngestAgent
-from app.core.wiki_fs import WikiFS
+from app.api.dependencies import get_ingest_agent, get_wiki_fs
 from app.core.raw_sources import save_raw_file_bytes
+from app.core.wiki_fs import WikiFS
 
 logger = logging.getLogger("wiki.api")
 router = APIRouter(prefix="/api/onboarding", tags=["onboarding"])
