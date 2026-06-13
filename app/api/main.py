@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.dependencies import build_base_llm_client, build_control_store, get_settings
 from app.api.routes import audit as audit_route
-from app.api.routes import auth, chat, conflicts, ingest, usage, wiki
+from app.api.routes import auth, chat, conflicts, ingest, onboarding, usage, wiki
 from app.api.routes import settings as settings_route
 from app.config import Settings, setup_logging
 from app.core.metered_llm_client import QuotaExceededError, UsageRecordingError
@@ -110,6 +110,7 @@ app.include_router(chat.router)
 app.include_router(wiki.router)
 app.include_router(conflicts.router)
 app.include_router(audit_route.router)
+app.include_router(onboarding.router)
 app.include_router(settings_route.router)
 app.include_router(usage.router)
 

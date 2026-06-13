@@ -205,6 +205,7 @@
     .typing-dot:nth-child(3) { animation-delay: .3s; }
     @keyframes bounce { 0%,80%,100% { transform: scale(.8); opacity:.5; }
                          40% { transform: scale(1.2); opacity:1; } }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ── Input bar ───────────────────────────── */
     .input-bar {
@@ -2354,6 +2355,143 @@ function Message({ msg, onSlugClick }) {
 }
 
 // ─────────────────────────────────────────────
+// Welcome Screen — shown for new/empty wikis
+// ─────────────────────────────────────────────
+function WelcomeScreen({ onDone }) {
+  const toast = React.useContext(ToastCtx);
+  const [status, setStatus] = useState('loading'); // loading | ready | seeding | seeded | error
+  const [detail, setDetail] = useState(null);
+
+  React.useEffect(() => {
+    api.get('/onboarding/status')
+      .then(data => {
+        if (data.needs_onboarding) {
+          setStatus('ready');
+        } else {
+          setStatus('seeded');
+          setDetail(data);
+        }
+      })
+      .catch(() => setStatus('error'));
+  }, []);
+
+  const handleSeed = async () => {
+    setStatus('seeding');
+    try {
+      const data = await api.post('/onboarding/seed-demo', {});
+      if (!data.success) {
+        setStatus('error');
+        setDetail(data.error);
+        return;
+      }
+      setStatus('seeded');
+      setDetail(data);
+      toast.success(`Демо-данные загружены: ${data.pages_created} страниц создано`);
+      if (onDone) onDone();
+    } catch (e) {
+      setStatus('error');
+      setDetail(e.message);
+    }
+  };
+
+  const style = {
+    container: {
+      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      flexDirection: 'column', gap: 16,
+    },
+    title: { fontSize: 22, color: 'var(--text)', fontWeight: 600 },
+    subtitle: { fontSize: 14, color: 'var(--text-dim)', textAlign: 'center', maxWidth: 440, lineHeight: 1.5 },
+    card: {
+      background: 'var(--surface2)', border: '1px solid var(--border)',
+      borderRadius: 12, padding: '20px 28px', maxWidth: 460, width: '100%',
+    },
+    stepRow: { display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 12 },
+    stepNum: {
+      background: 'var(--accent)', color: '#fff', borderRadius: '50%',
+      width: 24, height: 24, display: 'flex', alignItems: 'center',
+      justifyContent: 'center', fontSize: 13, fontWeight: 600, flexShrink: 0,
+    },
+    stepText: { fontSize: 13, color: 'var(--text)', lineHeight: 1.5 },
+  };
+
+  if (status === 'loading') {
+    return (
+      <div style={style.container}>
+        <div style={{ fontSize: 14, color: 'var(--text-dim)' }}>Проверка состояния вики...</div>
+      </div>
+    );
+  }
+
+  if (status === 'error') {
+    return (
+      <div style={style.container}>
+        <div style={{ fontSize: 40 }}>⚠️</div>
+        <div style={style.title}>Ошибка</div>
+        <div style={style.subtitle}>{detail || 'Не удалось проверить состояние вики'}</div>
+        <button className="header-btn" onClick={() => setStatus('loading')}>Повторить</button>
+      </div>
+    );
+  }
+
+  if (status === 'seeded') {
+    return (
+      <div style={style.container}>
+        <div style={{ fontSize: 40 }}>✅</div>
+        <div style={style.title}>Вики готова к работе</div>
+        <div style={style.subtitle}>
+          Демо-данные загружены. Задайте вопрос о SmartLight IoT платформе.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={style.container}>
+      <div style={{ fontSize: 40 }}>🧠</div>
+      <div style={style.title}>Wiki Движок</div>
+      <div style={style.subtitle}>
+        Персональная вики, построенная на ваших документах.
+        Загрузите Markdown или файлы проектов — система сама структурирует их в связную базу знаний.
+      </div>
+      <div style={style.card}>
+        <div style={style.stepRow}>
+          <div style={style.stepNum}>1</div>
+          <div style={style.stepText}>
+            <strong>Загрузите демо-данные</strong> — три файла о платформе SmartLight IoT.
+            Система создаст страницы вики и свяжет их между собой.
+          </div>
+        </div>
+        <div style={style.stepRow}>
+          <div style={style.stepNum}>2</div>
+          <div style={style.stepText}>
+            <strong>Изучайте вопросы</strong> — спрашивайте про архитектуру, API и сценарии.
+            Каждый ответ ссылается на исходные страницы.
+          </div>
+        </div>
+        <div style={style.stepRow}>
+          <div style={style.stepNum}>3</div>
+          <div style={style.stepText}>
+            <strong>Добавляйте свои документы</strong> — загружайте реальные файлы проектов
+            через кнопку «Загрузить» в верхней панели.
+          </div>
+        </div>
+        {status === 'seeding' ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', marginTop: 8 }}>
+            <div style={{ width: 16, height: 16, border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            <span style={{ fontSize: 13, color: 'var(--text-dim)' }}>Создание страниц...</span>
+          </div>
+        ) : (
+          <button className="header-btn" onClick={handleSeed}
+            style={{ width: '100%', marginTop: 8, justifyContent: 'center', padding: '10px 0', fontSize: 14 }}>
+            🚀 Загрузить демо-данные
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // Main App
 // ─────────────────────────────────────────────
 function App() {
@@ -2375,6 +2513,10 @@ function App() {
    const [showAudit, setShowAudit] = useState(false);
 
    const refreshWiki = useCallback(() => setRefreshKey(k => k + 1), []);
+
+   // Onboarding state
+   const [needsOnboarding, setNeedsOnboarding] = useState(true);
+   const [onboardingLoaded, setOnboardingLoaded] = useState(false);
 
   // Chat input
   const [input, setInput] = useState('');
@@ -2428,6 +2570,18 @@ function App() {
   };
 
   useEffect(() => { loadSessions(); }, []);
+
+  // Check onboarding status on mount
+  useEffect(() => {
+    api.get('/onboarding/status')
+      .then(data => { setNeedsOnboarding(data.needs_onboarding); })
+      .catch(() => { setNeedsOnboarding(false); });
+  }, []);
+
+  const handleSeedDone = () => {
+    setNeedsOnboarding(false);
+    setOnboardingLoaded(true);
+  };
 
   const newSession = () => {
     const id = crypto.randomUUID?.() ?? 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16); });
@@ -2673,27 +2827,29 @@ function App() {
         {/* Center — chat */}
         <div className="chat-area">
           {messages.length === 0 && (
-            <div style={{flex:1, display:'flex', alignItems:'center',
-                          justifyContent:'center', flexDirection:'column', gap:12,
-                          color:'var(--text-dim)'}}>
-              <div style={{fontSize:40}}>🧠</div>
-              <div style={{fontSize:16, color:'var(--text)'}}>Wiki Движок</div>
-              <div style={{fontSize:13}}>Загрузите документы и задайте вопрос</div>
-              <div style={{display:'flex', gap:8, flexWrap:'wrap', justifyContent:'center',
-                            maxWidth:400, marginTop:8}}>
-                {['Что использует этот проект для кеширования?',
-                  'Сравни подходы к развёртыванию между проектами',
-                  'Покажи все страницы про аутентификацию'].map(hint => (
-                  <div key={hint}
-                    style={{background:'var(--surface2)', border:'1px solid var(--border)',
-                             borderRadius:8, padding:'6px 12px', fontSize:12,
-                             cursor:'pointer', color:'var(--text-dim)'}}
-                    onClick={() => { setInput(hint); textareaRef.current?.focus(); }}>
-                    {hint}
+            needsOnboarding
+              ? <WelcomeScreen onDone={handleSeedDone} />
+              : <div style={{flex:1, display:'flex', alignItems:'center',
+                              justifyContent:'center', flexDirection:'column', gap:12,
+                              color:'var(--text-dim)'}}>
+                  <div style={{fontSize:40}}>🧠</div>
+                  <div style={{fontSize:16, color:'var(--text)'}}>Wiki Движок</div>
+                  <div style={{fontSize:13}}>Загрузите документы и задайте вопрос</div>
+                  <div style={{display:'flex', gap:8, flexWrap:'wrap', justifyContent:'center',
+                                maxWidth:400, marginTop:8}}>
+                    {['Что использует этот проект для кеширования?',
+                      'Сравни подходы к развёртыванию между проектами',
+                      'Покажи все страницы про аутентификацию'].map(hint => (
+                      <div key={hint}
+                        style={{background:'var(--surface2)', border:'1px solid var(--border)',
+                                 borderRadius:8, padding:'6px 12px', fontSize:12,
+                                 cursor:'pointer', color:'var(--text-dim)'}}
+                        onClick={() => { setInput(hint); textareaRef.current?.focus(); }}>
+                        {hint}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
+                </div>
           )}
           <div className="messages" style={{display: messages.length ? 'flex' : 'none'}}>
             {messages.map((msg, i) => (
