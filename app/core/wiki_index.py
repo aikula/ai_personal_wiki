@@ -62,30 +62,46 @@ def rebuild_index(fs) -> None:
 
     index_path = fs.wiki_dir / "index.md"
     index_page = fs.read_page("index")
-    if index_page is None:
-        return
 
-    stats_block = (
-        f"Last updated: {today}\n"
+    lines = [
+        f"Last updated: {today}",
         f"Pages: {len(pages)} | "
         f"Projects: {len(projects)} | "
-        f"Open conflicts: {open_conf}"
-    )
-    new_content = re.sub(
-        r"Last updated:.*?Open conflicts: \d+",
-        stats_block,
-        index_page.content,
-        flags=re.DOTALL,
-    )
+        f"Open conflicts: {open_conf}",
+        "",
+    ]
 
-    for proj in projects:
-        if f"## {proj}" not in new_content:
-            new_content += f"\n## {proj}\n[[{proj}/index]] — project {proj}\n"
+    for proj in sorted(projects):
+        proj_pages = by_project.get(proj, [])
+        lines.append(f"## {proj} ({len(proj_pages)} pages)")
+        lines.append(f"[[{proj}/index]] — project {proj}")
+        lines.append("")
 
-    index_path.write_text(
-        frontmatter.dumps(frontmatter.Post(new_content, **index_page.meta)),
-        encoding="utf-8"
-    )
+    new_content = "\n".join(lines).rstrip() + "\n"
+
+    if index_page is None:
+        meta = {
+            "title": "Wiki Index",
+            "project": "_general",
+            "type": "index",
+            "tags": [],
+            "confidence": 1.0,
+            "sources": 0,
+            "last_confirmed": today,
+            "supersedes": None,
+            "superseded_by": None,
+            "created": today,
+        }
+        index_path.write_text(
+            frontmatter.dumps(frontmatter.Post(new_content, **meta)),
+            encoding="utf-8",
+        )
+    else:
+        index_path.write_text(
+            frontmatter.dumps(frontmatter.Post(new_content, **index_page.meta)),
+            encoding="utf-8",
+        )
+
     logger.info("Index rebuilt: pages=%d projects=%d", len(pages), len(projects))
 
 

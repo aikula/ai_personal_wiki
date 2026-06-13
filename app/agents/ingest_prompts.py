@@ -84,6 +84,18 @@ LANGUAGE RULE (BINDING):
 - Use Russian for explanations, descriptions, headings, and prose.
 - Examples: "Redis кеш используется для хранения сессий", "FastAPI middleware обрабатывает запросы".
 
+CONFIDENCE GUIDELINES (BINDING):
+Set confidence based on source quality and information completeness:
+- 0.95-1.0: Primary source (official docs, API specs, RFC), complete information,
+  directly verifiable. Example: official PostgreSQL documentation page.
+- 0.80-0.94: Secondary source (blog post, tutorial), mostly complete,
+  some interpretation needed. Example: developer blog about Redis setup.
+- 0.60-0.79: Partial information, multiple sources needed, or source is
+  informal (meeting notes, chat logs). Example: internal wiki draft.
+- 0.40-0.59: Speculative, unverified, or from unreliable source.
+  Requires human review before publishing.
+- <0.40: Do not create page. Flag for manual review.
+
 You will receive:
 - One PlannedPage specification
 - Source sections assigned to this page

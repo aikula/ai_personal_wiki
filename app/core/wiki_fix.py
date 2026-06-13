@@ -15,16 +15,19 @@ def fix_broken_wikilinks(fs, project: str | None = None) -> int:
     """Remove broken [[wikilinks]] from all pages in the given project (or all).
 
     A broken wikilink is one whose target slug does not correspond to
-    an existing page. Returns the number of pages modified.
+    an existing page. Before removing, attempts to normalize the slug
+    (lowercase, replace underscores with hyphens) and check again.
+    Returns the number of pages modified.
     """
     all_pages = fs.list_pages()
     existing_slugs = {p.slug for p in all_pages}
     wikilink_re = re.compile(r"\[\[([^\]|#]+)(?:(#)([^\]|]+))?(?:\|[^\]]+)?\]\]")
     modified_count = 0
 
+    def _normalize_slug(slug: str) -> str:
+        return slug.strip().lower().replace("_", "-")
+
     for page in all_pages:
-        if page.page_type in ("index", "log"):
-            continue
         if project and page.project != project:
             continue
         original = page.raw
@@ -36,9 +39,12 @@ def fix_broken_wikilinks(fs, project: str | None = None) -> int:
             pipe_match = re.match(r"\[\[([^\]|]+)\|([^\]]+)\]\]", full)
             if pipe_match:
                 display = pipe_match.group(2)
-            if target not in existing_slugs:
-                return display if display else ""
-            return full
+            if target in existing_slugs:
+                return full
+            normalized = _normalize_slug(target)
+            if normalized in existing_slugs:
+                return f"[[{normalized}]]"
+            return display if display else ""
 
         new_content = wikilink_re.sub(_fix_link, original)
         if new_content != original:
