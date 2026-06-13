@@ -141,26 +141,34 @@ async def ingest_batch(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
+    accepted_keys = {"files", "file"}
+    items = [
+        (key, value) for key, value in form.multi_items()
+        if key in accepted_keys and getattr(value, "filename", None)
+    ]
+    if not items:
+        raise HTTPException(400, "Пустой батч: нет файлов с ключом 'files' или 'file'")
+
     results = []
-    skipped = []
-    for key, source_file in form.multi_items():
-        if key != "files":
-            continue
-        if not getattr(source_file, "filename", None):
-            skipped.append({"file": "", "reason": "empty filename"})
-            continue
+    skipped_details = []
+    for key, source_file in items:
         try:
             response = await _save_and_ingest(project, source_file, agent, fs)
             results.append(response.model_dump())
         except HTTPException as exc:
-            skipped.append({"file": source_file.filename, "reason": exc.detail})
+            skipped_details.append({
+                "file": source_file.filename,
+                "reason": exc.detail,
+            })
 
     return {
-        "total": len(results),
-        "skipped": skipped,
+        "total": len(items),
+        "processed": len(results),
+        "skipped": len(skipped_details),
         "successes": sum(1 for r in results if r["success"]),
         "failures": sum(1 for r in results if not r["success"]),
         "details": results,
+        "skipped_details": skipped_details,
     }
 
 
