@@ -1744,6 +1744,8 @@ function ConflictsPanel() {
   const [comments, setComments] = useState({});
   const [addingComment, setAddingComment] = useState({});
   const [applying, setApplying] = useState({});
+  const [preparing, setPreparing] = useState({});
+  const [preparedDraft, setPreparedDraft] = useState({});
   const [detailConflict, setDetailConflict] = useState(null);
 
   const load = async () => {
@@ -1783,19 +1785,40 @@ function ConflictsPanel() {
     }
   };
 
+  const prepareUpdate = async (id) => {
+    setPreparing(p => ({...p, [id]: true}));
+    try {
+      const res = await api.post(`/conflicts/${id}/prepare-update`);
+      setPreparedDraft(d => ({...d, [id]: {diff: res.diff, slug: res.affected_slug}}));
+      toast('Черновик подготовлен — проверьте diff', 'success');
+    } catch(e) {
+      toast(`Ошибка: ${e.message}`, 'error');
+    } finally {
+      setPreparing(p => ({...p, [id]: false}));
+    }
+  };
+
   const applyUpdate = async (id) => {
     setApplying(a => ({...a, [id]: true}));
     try {
-      // Prepare draft first
-      await api.post(`/conflicts/${id}/prepare-update`);
-      // Then apply it
       const res = await api.post(`/conflicts/${id}/apply-update`);
       toast(res.message, 'success');
+      setPreparedDraft(d => { const n = {...d}; delete n[id]; return n; });
       await load();
     } catch(e) {
       toast(`Ошибка: ${e.message}`, 'error');
     } finally {
       setApplying(a => ({...a, [id]: false}));
+    }
+  };
+
+  const rejectUpdate = async (id) => {
+    try {
+      await api.post(`/conflicts/${id}/reject-update`);
+      setPreparedDraft(d => { const n = {...d}; delete n[id]; return n; });
+      toast('Черновик отклонён', 'success');
+    } catch(e) {
+      toast(`Ошибка: ${e.message}`, 'error');
     }
   };
 
@@ -1935,12 +1958,47 @@ function ConflictsPanel() {
                     Навык: {c.skill_extracted}
                   </div>
                 )}
-                <button className="btn-resolve"
-                  style={{marginTop:8, fontSize:11, padding:'4px 10px'}}
-                  disabled={applying[c.id]}
-                  onClick={() => applyUpdate(c.id)}>
-                  {applying[c.id] ? 'Применение…' : '🔄 Применить к wiki'}
-                </button>
+                {preparedDraft[c.id] ? (
+                  <>
+                    <div style={{fontSize:10, color:'var(--text-dim)', marginTop:8, marginBottom:4}}>
+                      Diff для [[{preparedDraft[c.id].slug}]]:
+                    </div>
+                    <pre style={{
+                      background:'rgba(0,0,0,0.05)',
+                      borderLeft:'3px solid var(--accent)',
+                      borderRadius:4,
+                      padding:'8px 10px',
+                      margin:'4px 0 8px',
+                      fontSize:10,
+                      lineHeight:1.4,
+                      maxHeight:240,
+                      overflow:'auto',
+                      whiteSpace:'pre-wrap',
+                      color:'var(--text)',
+                    }}>{preparedDraft[c.id].diff || '(нет изменений)'}</pre>
+                    <div style={{display:'flex', gap:6}}>
+                      <button className="btn-resolve"
+                        style={{fontSize:11, padding:'4px 10px'}}
+                        disabled={applying[c.id]}
+                        onClick={() => applyUpdate(c.id)}>
+                        {applying[c.id] ? 'Применение…' : '✓ Применить'}
+                      </button>
+                      <button className="btn-comment"
+                        style={{fontSize:11, padding:'4px 10px'}}
+                        disabled={applying[c.id]}
+                        onClick={() => rejectUpdate(c.id)}>
+                        ✗ Отклонить
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <button className="btn-resolve"
+                    style={{marginTop:8, fontSize:11, padding:'4px 10px'}}
+                    disabled={preparing[c.id] || applying[c.id]}
+                    onClick={() => prepareUpdate(c.id)}>
+                    {preparing[c.id] ? 'Подготовка…' : '🔄 Подготовить обновление'}
+                  </button>
+                )}
               </div>
             )}
           </div>
