@@ -1,0 +1,49 @@
+services:
+  wiki-engine:
+    build: .
+    container_name: wiki-engine
+    restart: unless-stopped
+    volumes:
+      - ./wiki-data:/wiki-data
+    environment:
+      APP_MODE: ${APP_MODE:-personal_local}
+      LANGUAGE: ${LANGUAGE:-ru}
+      WIKI_DATA_PATH: /wiki-data
+
+      CONTROL_DB_URL: ${CONTROL_DB_URL:-sqlite:////wiki-data/control.db}
+      WIKI_WORKSPACES_ROOT: ${WIKI_WORKSPACES_ROOT:-/wiki-data/workspaces}
+      MULTI_USER_ADMIN_EMAILS: ${MULTI_USER_ADMIN_EMAILS:-}
+      MULTI_USER_ADMIN_EMAIL: ${MULTI_USER_ADMIN_EMAIL:-}
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+      DEFAULT_DAILY_TOKENS: ${DEFAULT_DAILY_TOKENS:-30000}
+      DEFAULT_WELCOME_TOKENS: ${DEFAULT_WELCOME_TOKENS:-200000}
+      DAILY_RESET_TIMEZONE: ${DAILY_RESET_TIMEZONE:-UTC}
+
+      WIKI_AUTH_ENABLED: ${WIKI_AUTH_ENABLED:-false}
+      WIKI_AUTH_USERNAME: ${WIKI_AUTH_USERNAME:-}
+      WIKI_AUTH_PASSWORD: ${WIKI_AUTH_PASSWORD:-}
+
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_BASE_URL:   ${LLM_BASE_URL:-https://api.openai.com/v1}
+      LLM_MODEL:      ${LLM_MODEL:-gpt-4o}
+      LLM_API_KEY:    ${LLM_API_KEY:-}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wiki-engine.rule=Host(`ai-wiki.kulinich.ru`)"
+      - "traefik.http.routers.wiki-engine.entrypoints=websecure"
+      - "traefik.http.routers.wiki-engine.tls=true"
+      - "traefik.http.routers.wiki-engine.tls.certresolver=myresolver"
+      - "traefik.http.services.wiki-engine.loadbalancer.server.port=8000"
+      - "traefik.docker.network=tghub-network"
+    networks:
+      - tghub-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+networks:
+  tghub-network:
+    external: true

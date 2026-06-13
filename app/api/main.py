@@ -40,7 +40,8 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     _check_auth_config(settings)
     if settings.app_mode == "multi_user":
-        build_control_store(settings)
+        store = build_control_store(settings)
+        store.reset_all_due_daily_buckets()
     app.state.llm_status = await _check_llm_connection()
     yield
 

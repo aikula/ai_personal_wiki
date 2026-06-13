@@ -458,6 +458,24 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - A function should do one thing. If it has "and" in its name, split it.
 - Before adding a new dependency or abstraction, ask: "Can I do this with stdlib in 10 lines?"
 
+## Deployment
+
+**Production:** `docker compose -f docker-compose-prod.yml up -d`
+- Использует traefik (`tghub-network`), порт 8000 не торчит наружу
+- Домен: `https://ai-wiki.kulinich.ru`
+- После `docker compose down` всегда стартовать prod-файл, а не dev
+
+**Dev:** `docker compose up -d`
+- Пробрасывает порт `${APP_PORT:-8000}:8000`
+- Не подключён к traefik, для локальной разработки
+
+## Session Snapshots
+
+Состояние после каждой сессии фиксируется в `docs/session-YYYY-MM-DD.md`:
+- что сделано, какие файлы изменены
+- открытые проблемы и findinds
+- план на следующий раз
+
 ## 6. File Size Limit
 
 **No file should exceed 500 lines without a justified exception.**

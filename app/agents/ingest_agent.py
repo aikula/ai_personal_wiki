@@ -153,6 +153,10 @@ class IngestAgent:
             if self.settings.ingest.auto_lint_after_ingest:
                 linter = WikiLinter(self.fs, self.settings)
                 lint_report = linter.lint(slugs=pages_created + pages_updated + pages_superseded)
+                # Auto-fix broken wikilinks created during ingest
+                fixed = self.fs.fix_broken_wikilinks(project=project)
+                if fixed:
+                    logger.info("Auto-fixed %d broken wikilinks after ingest", fixed)
 
             return IngestResult(
                 success=True,
@@ -253,75 +257,82 @@ print(json.dumps(result))
             + [(p, "supersede") for p in analysis.pages_to_supersede]
         )
         for planned, action in all_planned:
-            existing_content = ""
-            if action in ("update", "supersede"):
-                existing_page = self.fs.read_page(planned.slug)
-                if existing_page:
-                    existing_content = existing_page.raw
-            char_limit = self._char_limit_for_type(planned.page_type)
-            source_sections_text = self._format_source_sections(planned.source_sections)
-            existing_trimmed = existing_content[:self.settings.ingest.existing_content_limit]
-            candidates = self.fs.build_link_candidates()
-            link_lines = []
-            for c in candidates[:self.settings.ingest.link_candidates_limit]:
-                alias_str = "; ".join(c["aliases"][:self.settings.ingest.link_aliases_per_candidate])
-                link_lines.append(f"- [[{c['slug']}]] — {c['title']}; aliases: {alias_str}")
-            link_candidates_text = "\n".join(link_lines) if link_lines else "(no candidates yet)"
-            prompt = STEP2_PROMPT.format(
-                planned_page_json=json.dumps(planned_page_to_dict(planned), ensure_ascii=False, indent=2),
-                source_file=analysis.source_file.replace("\\", "/"),
-                source_sections=source_sections_text,
-                existing_content=existing_trimmed,
-                link_candidates=link_candidates_text,
-                today=today,
-                confidence=planned.confidence,
-                sources_count=planned.sources_count,
-                char_limit=char_limit,
-            )
-            system = build_system_prompt(STEP2_SYSTEM, agents_md, skills)
-            raw = self.llm.call(system=system, prompt=prompt, temperature=0.1, json_mode=True, max_tokens=self.settings.ingest.max_completion_tokens)
             try:
-                page_data = parse_json_response(raw, context=f"Step2 {planned.slug}")
-            except ValueError:
-                retry_prompt = prompt + "\n\nIMPORTANT: Your previous response was not valid JSON. Output ONLY valid JSON."
-                raw = self.llm.call(system=system, prompt=retry_prompt, temperature=self.settings.ingest.retry_temperature, json_mode=True, max_tokens=self.settings.ingest.max_completion_tokens)
-                page_data = parse_json_response(raw, context=f"Step2 retry {planned.slug}")
-            meta = page_data.get("meta", {})
-            content = page_data.get("content", "")
-            if not meta.get("created"):
-                meta["created"] = today
-            # Enforce project from slug (LLM sometimes copies source-file project onto _general pages)
-            meta["project"] = planned.slug.split("/")[0] if "/" in planned.slug else analysis.project
-            # Auto-fill empty tags from slug and source
-            if not meta.get("tags"):
-                meta["tags"] = self._derive_tags(planned.slug, analysis.source_file)
-            content = auto_link(content, self.fs.build_link_candidates(), current_slug=planned.slug)
-            existing_slugs = {p.slug for p in self.fs.list_pages()}
-            content = normalize_wikilinks(content, existing_slugs)
-            broken = validate_wikilinks(content, existing_slugs)
-            if broken:
-                logger.warning("Step2 %s has %d broken wikilinks: %s", planned.slug, len(broken), broken)
-            if action == "create" or not allow_draft:
+                existing_content = ""
+                if action in ("update", "supersede"):
+                    existing_page = self.fs.read_page(planned.slug)
+                    if existing_page:
+                        existing_content = existing_page.raw
+                char_limit = self._char_limit_for_type(planned.page_type)
+                source_sections_text = self._format_source_sections(planned.source_sections)
+                existing_trimmed = existing_content[:self.settings.ingest.existing_content_limit]
+                candidates = self.fs.build_link_candidates()
+                link_lines = []
+                for c in candidates[:self.settings.ingest.link_candidates_limit]:
+                    alias_str = "; ".join(c["aliases"][:self.settings.ingest.link_aliases_per_candidate])
+                    link_lines.append(f"- [[{c['slug']}]] — {c['title']}; aliases: {alias_str}")
+                link_candidates_text = "\n".join(link_lines) if link_lines else "(no candidates yet)"
+                prompt = STEP2_PROMPT.format(
+                    planned_page_json=json.dumps(planned_page_to_dict(planned), ensure_ascii=False, indent=2),
+                    source_file=analysis.source_file.replace("\\", "/"),
+                    source_sections=source_sections_text,
+                    existing_content=existing_trimmed,
+                    link_candidates=link_candidates_text,
+                    today=today,
+                    confidence=planned.confidence,
+                    sources_count=planned.sources_count,
+                    char_limit=char_limit,
+                )
+                system = build_system_prompt(STEP2_SYSTEM, agents_md, skills)
+                raw = self.llm.call(system=system, prompt=prompt, temperature=0.1, json_mode=True, max_tokens=self.settings.ingest.max_completion_tokens)
                 try:
-                    self.fs.write_page(slug=planned.slug, meta=meta, content=content, allow_overwrite=(action != "create"))
-                    if action == "create":
-                        pages_created.append(planned.slug)
-                    else:
-                        pages_updated.append(planned.slug)
-                except Exception as exc:
-                    exc_name = type(exc).__name__
-                    if "CharLimitExceeded" in exc_name:
-                        logger.warning("Step2 %s exceeded char limit, retrying with compact prompt", planned.slug)
-                        retry_ok = self._retry_compact_page(
-                            planned, system, agents_md, skills, today, analysis, action,
-                            pages_created, pages_updated,
-                        )
-                        if not retry_ok:
-                            logger.error("Step2 retry also failed for %s", planned.slug)
-                    else:
-                        logger.warning("Step2 write failed: slug=%s action=%s error=%s", planned.slug, action, exc)
+                    page_data = parse_json_response(raw, context=f"Step2 {planned.slug}")
+                except ValueError:
+                    retry_prompt = prompt + "\n\nIMPORTANT: Your previous response was not valid JSON. Output ONLY valid JSON."
+                    retry_max_tokens = self.settings.ingest.max_completion_tokens * 2
+                    raw = self.llm.call(system=system, prompt=retry_prompt, temperature=self.settings.ingest.retry_temperature, json_mode=True, max_tokens=retry_max_tokens)
+                    try:
+                        page_data = parse_json_response(raw, context=f"Step2 retry {planned.slug}")
+                    except ValueError:
+                        raw = self.llm.call(system=system, prompt=retry_prompt, temperature=self.settings.ingest.retry_temperature, json_mode=True, max_tokens=self.settings.llm.max_completion_tokens)
+                        page_data = parse_json_response(raw, context=f"Step2 fallback {planned.slug}")
+                meta = page_data.get("meta", {})
+                content = page_data.get("content", "")
+                if not meta.get("created"):
+                    meta["created"] = today
+                meta["project"] = planned.slug.split("/")[0] if "/" in planned.slug else analysis.project
+                if not meta.get("tags"):
+                    meta["tags"] = self._derive_tags(planned.slug, analysis.source_file)
+                content = auto_link(content, self.fs.build_link_candidates(), current_slug=planned.slug)
+                existing_slugs = {p.slug for p in self.fs.list_pages()}
+                content = normalize_wikilinks(content, existing_slugs)
+                broken = validate_wikilinks(content, existing_slugs)
+                if broken:
+                    logger.warning("Step2 %s has %d broken wikilinks: %s", planned.slug, len(broken), broken)
+                if action == "create" or not allow_draft:
+                    try:
+                        self.fs.write_page(slug=planned.slug, meta=meta, content=content, allow_overwrite=(action != "create"))
+                        if action == "create":
+                            pages_created.append(planned.slug)
+                        else:
+                            pages_updated.append(planned.slug)
+                    except Exception as exc:
+                        exc_name = type(exc).__name__
+                        if "CharLimitExceeded" in exc_name:
+                            logger.warning("Step2 %s exceeded char limit, retrying with compact prompt", planned.slug)
+                            retry_ok = self._retry_compact_page(
+                                planned, system, agents_md, skills, today, analysis, action,
+                                pages_created, pages_updated,
+                            )
+                            if not retry_ok:
+                                logger.error("Step2 retry also failed for %s", planned.slug)
+                        else:
+                            logger.warning("Step2 write failed: slug=%s action=%s error=%s", planned.slug, action, exc)
+                    continue
+                pending_updates.append({"slug": planned.slug, "content": render_page_raw(meta, content), "action": action})
+            except Exception as exc:
+                logger.error("Step2 failed for %s: %s", planned.slug, exc)
                 continue
-            pending_updates.append({"slug": planned.slug, "content": render_page_raw(meta, content), "action": action})
         if pending_updates:
             draft_id = f"ingest-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
             plan = {
@@ -701,6 +712,9 @@ print(json.dumps(result))
             lint_report = linter.lint(
                 slugs=pages_created + pages_updated + claims_files
             )
+            fixed = self.fs.fix_broken_wikilinks(project=project)
+            if fixed:
+                logger.info("Auto-fixed %d broken wikilinks after large ingest", fixed)
 
         analysis_notes = merged.triage_report
         if quota_exhausted:
@@ -1042,9 +1056,16 @@ print(json.dumps(result))
         try:
             page_data = parse_json_response(raw, context=f"Step2 {slug}")
         except ValueError:
+            # Retry with doubled token budget — the first call may have been truncated
+            retry_max_tokens = self.settings.ingest.max_completion_tokens * 2
             retry_prompt = prompt + "\n\nIMPORTANT: Your previous response was not valid JSON. Output ONLY valid JSON."
-            raw = self.llm.call(system=system, prompt=retry_prompt, temperature=self.settings.ingest.retry_temperature, json_mode=True, max_tokens=self.settings.ingest.max_completion_tokens)
-            page_data = parse_json_response(raw, context=f"Step2 retry {slug}")
+            raw = self.llm.call(system=system, prompt=retry_prompt, temperature=self.settings.ingest.retry_temperature, json_mode=True, max_tokens=retry_max_tokens)
+            try:
+                page_data = parse_json_response(raw, context=f"Step2 retry {slug}")
+            except ValueError:
+                # One more attempt with max llm completion tokens as final fallback
+                raw = self.llm.call(system=system, prompt=retry_prompt, temperature=self.settings.ingest.retry_temperature, json_mode=True, max_tokens=self.settings.llm.max_completion_tokens)
+                page_data = parse_json_response(raw, context=f"Step2 fallback {slug}")
 
         meta = page_data.get("meta", {})
         content = page_data.get("content", "")

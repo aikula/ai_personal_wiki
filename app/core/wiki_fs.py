@@ -2029,9 +2029,25 @@ created: {today}
 
         content = "\n".join(lines).rstrip() + "\n"
 
-        # Check char limit
+        # Check char limit — if exceeded, trim oversized sections
         if len(content) > self.limits.index_l1_chars:
-            logger.warning("Project index %s exceeds char limit", project)
+            logger.warning("Project index %s exceeds char limit (%d > %d), trimming",
+                           project, len(content), self.limits.index_l1_chars)
+            # Rebuild: keep the header, drop least important pages from largest sections
+            trimmed = list(lines[:4])  # header lines
+            for letter in sorted(by_letter.keys()):
+                page_list = sorted(by_letter[letter], key=lambda x: x.title)
+                trimmed.append(f"## {letter}")
+                for p in page_list:
+                    candidate = [*trimmed, f"[[{p.slug}]] — {p.title}", ""]
+                    if len("\n".join(candidate)) <= self.limits.index_l1_chars:
+                        trimmed.append(f"[[{p.slug}]] — {p.title}")
+                    else:
+                        trimmed.append(f"(({len(page_list)} страниц, достигнут лимит))")
+                        break
+                trimmed.append("")
+            content = "\n".join(trimmed).rstrip() + "\n"
+            logger.info("Project index %s trimmed to %d chars", project, len(content))
 
         # Frontmatter
         meta = {
@@ -2101,6 +2117,44 @@ created: {today}
             logger.info("Removed %d orphan conflicts", removed)
 
         return removed
+
+    def fix_broken_wikilinks(self, project: str | None = None) -> int:
+        """Remove broken [[wikilinks]] from all pages in the given project (or all projects).
+        A broken wikilink is one whose target slug does not correspond to an existing page.
+        Returns the number of pages modified.
+        """
+        all_pages = self.list_pages()
+        existing_slugs = {p.slug for p in all_pages}
+        wikilink_re = re.compile(r"\[\[([^\]|#]+)(?:(#)([^\]|]+))?(?:\|[^\]]+)?\]\]")
+        modified_count = 0
+
+        for page in all_pages:
+            if page.page_type in ("index", "log"):
+                continue
+            original = page.raw_content
+            page_path = self._slug_to_path(page.slug)
+
+            def _fix_link(match: re.Match) -> str:
+                target = match.group(1).strip()
+                display = None
+                full = match.group(0)
+                # Extract display text if present: [[slug|Display]]
+                pipe_match = re.match(r"\[\[([^\]|]+)\|([^\]]+)\]\]", full)
+                if pipe_match:
+                    display = pipe_match.group(2)
+                if target not in existing_slugs:
+                    # Return just the display text, or remove the link entirely
+                    return display if display else ""
+                return full
+
+            new_content = wikilink_re.sub(_fix_link, original)
+            if new_content != original:
+                page_path.write_text(new_content, encoding="utf-8")
+                modified_count += 1
+
+        if modified_count:
+            logger.info("Fixed broken wikilinks in %d pages", modified_count)
+        return modified_count
 
     # ── Internal helpers ─────────────────────────────────────────
 

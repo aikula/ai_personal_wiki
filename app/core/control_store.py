@@ -316,6 +316,34 @@ class SQLiteControlStore:
         finally:
             conn.close()
 
+    def reset_all_due_daily_buckets(self) -> int:
+        """Reset ALL daily buckets whose reset_at has passed.
+        Called at application startup to ensure no user is stuck.
+        Returns number of buckets actually reset (tokens_used > 0 → 0).
+        """
+        now = datetime.now(timezone.utc)
+        conn = self._connect()
+        try:
+            due = conn.execute(
+                "SELECT id, tokens_used, reset_at FROM credit_buckets "
+                "WHERE bucket_type = 'daily' AND reset_at IS NOT NULL",
+            ).fetchall()
+            count = 0
+            for row in due:
+                if _parse_timestamp(row["reset_at"]) <= now:
+                    conn.execute(
+                        "UPDATE credit_buckets SET tokens_used = 0, reset_at = ?, updated_at = ? WHERE id = ?",
+                        (_next_reset_at(), now.isoformat(), row["id"]),
+                    )
+                    if row["tokens_used"] > 0:
+                        count += 1
+            conn.commit()
+            if count > 0 or len(due) > 0:
+                logger.info("Daily buckets: %d due, %d actually reset", len(due), count)
+            return count
+        finally:
+            conn.close()
+
     def get_credit_state(self, user_id: str) -> CreditState:
         conn = self._connect()
         try:

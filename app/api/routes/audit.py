@@ -50,6 +50,19 @@ async def get_lint(
     }
 
 
+@router.post("/lint/fix-wikilinks")
+async def fix_wikilinks(
+    fs: Annotated[WikiFS, Depends(get_wiki_fs)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    project: str | None = None,
+):
+    """Remove all broken [[wikilinks]] from pages.
+    Optionally limit to a single project.
+    """
+    fixed = fs.fix_broken_wikilinks(project=project)
+    return {"fixed_pages": fixed}
+
+
 @router.get("/synthesis")
 async def list_synthesis(
     agent: Annotated[AuditAgent, Depends(get_audit_agent)] = None,
