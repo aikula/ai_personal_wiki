@@ -6,12 +6,9 @@ from pathlib import Path
 import bcrypt
 import pytest
 
-from app.core.control_store import (
-    InsufficientCreditsError,
-    NoopControlStore,
-    SQLiteControlStore,
-    UsageEvent,
-)
+from app.core.control_store import InsufficientCreditsError, UsageEvent
+from app.core.control_store_noop import NoopControlStore
+from app.core.control_store_sqlite import SQLiteControlStore
 from app.core.migrations.runner import run_migrations
 
 # ── Migration tests ───────────────────────────────────────────────

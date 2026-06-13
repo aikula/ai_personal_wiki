@@ -6,11 +6,11 @@ import pytest
 
 from app.config import Settings
 from app.core.large_source_ingest import (
-    ChunkAnalysisResult,
     chunk_by_outline,
     merge_analysis,
     parse_outline,
 )
+from app.core.large_source_types import ChunkAnalysisResult
 
 
 @pytest.fixture

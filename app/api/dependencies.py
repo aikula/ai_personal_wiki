@@ -39,7 +39,7 @@ def get_settings() -> Settings:
 def build_control_store(settings: Settings):
     """Resolve ControlStore based on app mode."""
     if settings.app_mode == "multi_user":
-        from app.core.control_store import SQLiteControlStore
+        from app.core.control_store_sqlite import SQLiteControlStore
         from app.core.migrations.runner import run_migrations
         db_url = settings.control.db_url
         if db_url.startswith("sqlite:///"):
@@ -48,7 +48,7 @@ def build_control_store(settings: Settings):
             db_path = Path(db_url)
         run_migrations(db_path)
         return SQLiteControlStore(db_path)
-    from app.core.control_store import NoopControlStore
+    from app.core.control_store_noop import NoopControlStore
     return NoopControlStore()
 
 

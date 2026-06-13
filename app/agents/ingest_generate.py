@@ -19,7 +19,7 @@ from app.agents.ingest_helpers import (
     render_page_raw,
 )
 from app.agents.ingest_prompts import STEP2_PROMPT, STEP2_SYSTEM
-from app.core.large_source_ingest import MergeAnalysisResult
+from app.core.large_source_types import MergeAnalysisResult
 from app.core.utils import normalize_wikilinks, slugify
 from app.core.wiki_fs import WikiFS
 

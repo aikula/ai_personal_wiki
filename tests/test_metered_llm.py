@@ -8,7 +8,8 @@ import pytest
 from app.api.dependencies import get_llm_client
 from app.config import Settings
 from app.core.context import WorkspaceContext
-from app.core.control_store import NoopControlStore, SQLiteControlStore
+from app.core.control_store_noop import NoopControlStore
+from app.core.control_store_sqlite import SQLiteControlStore
 from app.core.metered_llm_client import MeteredLLMClient, QuotaExceededError
 from app.core.migrations.runner import run_migrations
 

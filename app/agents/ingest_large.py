@@ -20,12 +20,11 @@ from app.agents.ingest_retrieval import build_wiki_context, find_related_pages
 from app.agents.ingest_types import IngestResult
 from app.config import language_instruction
 from app.core.large_source_ingest import (
-    Chunk,
-    ChunkAnalysisResult,
     chunk_by_outline,
     merge_analysis,
     parse_outline,
 )
+from app.core.large_source_types import Chunk, ChunkAnalysisResult
 from app.core.linter import WikiLinter
 from app.core.metered_llm_client import QuotaExceededError
 from app.core.utils import now_iso, slugify
