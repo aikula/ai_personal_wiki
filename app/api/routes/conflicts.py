@@ -5,10 +5,17 @@ GET  /api/conflicts              — list all conflicts (open + resolved)
 GET  /api/conflicts/{id}         — get single conflict
 POST /api/conflicts/{id}/resolve — resolve with choice + comment
 POST /api/conflicts/{id}/comment — add comment without resolving
+
+POST /api/conflicts/{id}/prepare-update  — generate candidate content via LLM, store draft
+POST /api/conflicts/{id}/apply-update    — apply stored draft (NO LLM call)
+POST /api/conflicts/{id}/reject-update   — delete draft without applying
 """
 
 from __future__ import annotations
 
+import asyncio
+import difflib
+import frontmatter
 import json
 import re
 from typing import Annotated
@@ -28,6 +35,9 @@ from app.api.models import (
     ResolveConflictRequest,
     ResolveConflictResponse,
 )
+from app.agents.ingest_helpers import build_system_prompt
+from app.agents.ingest_prompts import STEP2_SYSTEM
+
 
 router = APIRouter(prefix="/api/conflicts", tags=["conflicts"])
 
@@ -151,13 +161,13 @@ async def add_comment(
 async def prepare_conflict_update(
     conflict_id: str,
     fs: Annotated[WikiFS, Depends(get_wiki_fs)],
+    agent: Annotated[IngestAgent, Depends(get_ingest_agent)],
 ):
     """
     Prepare a draft update for the wiki page affected by a resolved conflict.
-    Returns draft metadata with affected slug and resolution details.
+    Generates candidate content via LLM, stores new.md and diff.patch in draft.
     """
     raw = fs.read_conflicts_raw()
-    # Find conflict (open or resolved)
     if conflict_id not in raw:
         raise HTTPException(404, f"Конфликт {conflict_id} не найден")
 
@@ -178,42 +188,13 @@ async def prepare_conflict_update(
     if draft is None:
         raise HTTPException(400, f"Не удалось подготовить обновление для {conflict_id}")
 
-    return {
-        "draft_id": draft["draft_id"],
-        "affected_slug": draft["affected_slug"],
-        "resolution": draft["resolution"],
-        "source_context": draft["source_context"],
-    }
-
-
-@router.post("/{conflict_id}/apply-update")
-async def apply_conflict_update(
-    conflict_id: str,
-    fs: Annotated[WikiFS, Depends(get_wiki_fs)],
-    agent: Annotated[IngestAgent, Depends(get_ingest_agent)],
-):
-    """
-    Apply a prepared conflict resolution draft to the wiki page.
-    Uses LLM to generate updated content based on resolution, then applies it.
-    """
+    # Generate candidate content via LLM
     draft_id = f"conflict-{conflict_id}"
     draft_dir = fs.drafts_dir / draft_id
-    if not draft_dir.exists():
-        raise HTTPException(404, f"Draft для {conflict_id} не найден. Сначала вызовите prepare-update.")
 
-    meta_path = draft_dir / "meta.json"
-    if not meta_path.exists():
-        raise HTTPException(404, f"meta.json не найден в draft {draft_id}")
-
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    affected_slug = meta["affected_slug"]
-    resolution = meta["resolution"]
-    source_context = meta["source_context"]
-    existing_content = meta["existing_content"]
-
-    # Use LLM to generate updated page
-    from app.agents.ingest_helpers import build_system_prompt
-    from app.agents.ingest_prompts import STEP2_SYSTEM
+    existing_page = fs.read_page(draft["affected_slug"])
+    if existing_page is None:
+        raise HTTPException(404, f"Страница {draft['affected_slug']} не найдена")
 
     skills = fs.read_skills()
     agents_md_text = ""
@@ -225,8 +206,8 @@ async def apply_conflict_update(
     prompt = (
         f"Update the following wiki page based on the resolved conflict resolution.\n\n"
         f"Resolution: {resolution}\n"
-        f"Source context: {source_context}\n\n"
-        f"Existing page:\n{existing_content}\n\n"
+        f"Source context: {draft['source_context']}\n\n"
+        f"Existing page:\n{existing_page.raw}\n\n"
         f"Rules:\n"
         f"- Keep the page structure and frontmatter intact.\n"
         f"- Update only the content that contradicts the resolution.\n"
@@ -235,40 +216,94 @@ async def apply_conflict_update(
         f"- Return ONLY the updated markdown body (no frontmatter block).\n"
     )
 
-    import asyncio
-    new_content = await asyncio.to_thread(
-        agent.llm.call,
-        system=system,
-        prompt=prompt,
-        temperature=0.1,
+    new_body = await asyncio.to_thread(
+        agent.llm.call, system=system, prompt=prompt, temperature=0.1,
     )
 
-    # Read existing page and update content only
-    existing_page = fs.read_page(affected_slug)
-    if existing_page is None:
-        raise HTTPException(404, f"Страница {affected_slug} не найдена")
+    # Save new.md (full page with frontmatter for apply)
+    updated_raw = frontmatter.dumps(frontmatter.Post(new_body, **existing_page.meta))
+    (draft_dir / "new.md").write_text(updated_raw, encoding="utf-8")
 
-    # Write updated page
-    import frontmatter
-    updated_post = frontmatter.Post(new_content, **existing_page.meta)
-    updated_path = fs.wiki_dir / f"{affected_slug}.md"
-    updated_path.parent.mkdir(parents=True, exist_ok=True)
-    updated_path.write_text(
-        frontmatter.dumps(updated_post),
-        encoding="utf-8",
+    # Generate unified diff
+    existing_lines = existing_page.raw.splitlines(keepends=True)
+    new_lines = new_content.splitlines(keepends=True)
+    diff = list(difflib.unified_diff(
+        existing_lines, new_lines,
+        fromfile="existing.md", tofile="new.md",
+        lineterm="",
+    ))
+    diff_text = "".join(diff)
+    (draft_dir / "diff.patch").write_text(diff_text, encoding="utf-8")
+
+    return {
+        "draft_id": draft_id,
+        "affected_slug": draft["affected_slug"],
+        "resolution": resolution,
+        "source_context": draft["source_context"],
+        "diff": diff_text,
+    }
+
+
+@router.post("/{conflict_id}/apply-update")
+async def apply_conflict_update(
+    conflict_id: str,
+    fs: Annotated[WikiFS, Depends(get_wiki_fs)],
+):
+    """
+    Apply a prepared conflict resolution draft to the wiki page.
+    Reads stored new.md — does NOT call LLM.
+    """
+    draft_id = f"conflict-{conflict_id}"
+    draft_dir = fs.drafts_dir / draft_id
+    if not draft_dir.exists():
+        raise HTTPException(404, f"Draft для {conflict_id} не найден. Сначала вызовите prepare-update.")
+
+    new_md_path = draft_dir / "new.md"
+    if not new_md_path.exists():
+        raise HTTPException(400, f"new.md не найден в draft {draft_id}. Сначала вызовите prepare-update.")
+
+    new_content = new_md_path.read_text(encoding="utf-8")
+
+    parsed = frontmatter.loads(new_content)
+    meta = {**parsed.metadata}
+    new_body = parsed.content
+
+    meta_path = draft_dir / "meta.json"
+    saved_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    affected_slug = saved_meta["affected_slug"]
+
+    fs.write_page(
+        slug=affected_slug,
+        meta=meta,
+        content=new_body,
+        allow_overwrite=True,
     )
+    fs.rebuild_index()
 
-    # Remove draft after applying
+    # Remove draft
     import shutil
     shutil.rmtree(draft_dir)
-
-    fs.rebuild_index()
 
     return {
         "success": True,
         "affected_slug": affected_slug,
         "message": f"Страница {affected_slug} обновлена согласно разрешению конфликта.",
     }
+
+
+@router.post("/{conflict_id}/reject-update")
+async def reject_conflict_update(
+    conflict_id: str,
+    fs: Annotated[WikiFS, Depends(get_wiki_fs)],
+):
+    """Delete the conflict update draft without modifying the page."""
+    draft_id = f"conflict-{conflict_id}"
+    draft_dir = fs.drafts_dir / draft_id
+    if not draft_dir.exists():
+        raise HTTPException(404, f"Draft для {conflict_id} не найден")
+    import shutil
+    shutil.rmtree(draft_dir)
+    return {"success": True, "conflict_id": conflict_id, "message": "Draft удалён."}
 
 
 # ── Parser ───────────────────────────────────────────────────────
