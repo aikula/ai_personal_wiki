@@ -7,8 +7,9 @@ for factual and comparison queries.
 
 from __future__ import annotations
 
+import json
 from datetime import date
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -79,13 +80,12 @@ def _outline(slug: str, title: str, synopsis: str, headings: list[str]) -> PageO
 class TestPolicyComparisonOutlineFirst:
     """Ensure comparison policy reads outlines before full pages."""
 
-    def test_reads_outline_for_each_project_page(self, query_agent):
+    @patch("app.agents.query_agent.classify_question")
+    def test_reads_outline_for_each_project_page(self, mock_classify, query_agent):
         agent, fs, llm = query_agent
 
-        # Mock classification
-        agent._classify = lambda q: ("comparison", ["redis"])
+        mock_classify.return_value = ("comparison", ["redis"])
 
-        # Mock search results — two projects, two pages each
         fs.search_pages_weighted.return_value = [
             {"slug": "proj_a/redis", "score": 1.0},
             {"slug": "proj_a/cache", "score": 0.9},
@@ -93,25 +93,20 @@ class TestPolicyComparisonOutlineFirst:
             {"slug": "proj_b/store", "score": 0.8},
         ]
 
-        # Mock read_page
         fs.read_page.side_effect = lambda slug: _wiki_page(
             slug, slug.split("/")[0], "Title", f"# {slug}\nContent"
         )
 
-        # Mock read_page_outline — all match keyword "redis"
         fs.read_page_outline.side_effect = lambda slug: _outline(
             slug, "Title", "Uses redis for caching", ["Redis Config"]
         )
 
-        # Mock answer generation
         llm.call.return_value = "Redis is used in both projects. [[proj_a/redis]] [[proj_b/redis]]"
 
         session = ChatSession(session_id="test-1", created_at="2026-05-25")
         result = agent.run("How do projects use Redis?", session)
 
-        # Assert outlines were consulted
         assert fs.read_page_outline.call_count >= 2
-        # Assert final answer contains citations
         assert "[[proj_a/redis]]" in result.answer
         assert result.question_type == "comparison"
 
@@ -119,10 +114,11 @@ class TestPolicyComparisonOutlineFirst:
 class TestPolicyFactualOutlineFirst:
     """Ensure factual policy reads outlines before full pages."""
 
-    def test_reads_outline_to_select_best_pages(self, query_agent):
+    @patch("app.agents.query_agent.classify_question")
+    def test_reads_outline_to_select_best_pages(self, mock_classify, query_agent):
         agent, fs, llm = query_agent
 
-        agent._classify = lambda q: ("factual", ["redis"])
+        mock_classify.return_value = ("factual", ["redis"])
 
         fs.search_pages_weighted.return_value = [
             {"slug": "myapp/redis", "score": 1.0},
@@ -142,6 +138,135 @@ class TestPolicyFactualOutlineFirst:
         session = ChatSession(session_id="test-2", created_at="2026-05-25")
         result = agent.run("How is Redis configured?", session)
 
-        # Outline should be consulted for each top page
         assert fs.read_page_outline.call_count >= 1
         assert result.question_type == "factual"
+
+
+class TestClaimsInFactualPolicy:
+    """Ensure factual policy searches and formats claims."""
+
+    @patch("app.agents.query_agent.classify_question")
+    def test_claims_retrieved_for_factual(self, mock_classify, query_agent):
+        from app.core.wiki_fs import Claim
+
+        agent, fs, llm = query_agent
+
+        mock_classify.return_value = ("factual", ["redis"])
+
+        fs.search_pages_weighted.return_value = [
+            {"slug": "myapp/redis", "score": 1.0},
+        ]
+        fs.read_page.side_effect = lambda slug: _wiki_page(
+            slug, "myapp", "Redis Config", "# myapp/redis\nRedis 7.2"
+        )
+        fs.read_page_outline.side_effect = lambda slug: _outline(
+            slug, "Title", "Redis configuration", ["Redis"]
+        )
+
+        # Mock claims search
+        claim = Claim(
+            claim_id="myapp/deploy_guide#chunk-001-claim-001",
+            source_id="myapp/deploy_guide",
+            source_path="raw/myapp/deploy_guide.md",
+            source_sha256="abc123",
+            source_section="## Redis",
+            quote="Redis 7.2 is used for caching",
+            normalized="Redis 7.2 используется для кеширования",
+            related_slugs=["myapp/redis"],
+            confidence=0.9,
+            status="active",
+            chunk_id="chunk-001",
+            project="myapp",
+            created="2026-06-13",
+        )
+        fs.search_claims.return_value = [claim]
+
+        llm.call.return_value = "Redis 7.2 используется. [[myapp/redis]] [[_claims/myapp/myapp__deploy_guide/chunk-001/chunk-001-claim-001]]"
+
+        session = ChatSession(session_id="test-3", created_at="2026-05-25")
+        result = agent.run("Какая версия Redis используется?", session)
+
+        fs.search_claims.assert_called_once()
+        assert "_claims/" in result.answer
+
+
+class TestClaimsInReAct:
+    """Ensure ReAct policy supports search_claims tool."""
+
+    @patch("app.agents.query_agent.classify_question")
+    def test_search_claims_tool_in_react(self, mock_classify, query_agent):
+        from app.core.wiki_fs import Claim
+
+        agent, fs, llm = query_agent
+
+        mock_classify.return_value = ("exploratory", ["redis", "cache"])
+
+        # First call returns search_claims action, second returns answer
+        llm.call.side_effect = [
+            json.dumps({
+                "action": "search_claims",
+                "input": {"query": "Redis caching"}
+            }),
+            json.dumps({
+                "action": "answer",
+                "content": "Redis is used for caching [[myapp/redis]] [[_claims/myapp/myapp__deploy_guide/chunk-001/chunk-001-claim-001]]"
+            }),
+        ]
+
+        claim = Claim(
+            claim_id="myapp/deploy_guide#chunk-001-claim-001",
+            source_id="myapp/deploy_guide",
+            source_path="raw/myapp/deploy_guide.md",
+            source_sha256="abc123",
+            source_section="## Redis",
+            quote="Redis 7.2 is used for caching",
+            normalized="Redis 7.2 используется для кеширования",
+            related_slugs=["myapp/redis"],
+            confidence=0.9,
+            status="active",
+            chunk_id="chunk-001",
+            project="myapp",
+            created="2026-06-13",
+        )
+        fs.search_claims.return_value = [claim]
+
+        session = ChatSession(session_id="test-4", created_at="2026-05-25")
+        result = agent.run("Расскажи про кеширование", session)
+
+        assert "_claims/myapp/myapp__deploy_guide/" in result.answer
+        assert result.iterations == 2  # 1 search_claims + 1 answer
+
+
+class TestFormatClaimsForContext:
+    """Verify format_claims_for_context output."""
+
+    def test_formats_claims_with_wikilinks(self):
+        from app.core.wiki_fs import Claim
+        from app.agents.query_search import format_claims_for_context
+
+        claim = Claim(
+            claim_id="myapp/deploy_guide#chunk-001-claim-001",
+            source_id="myapp/deploy_guide",
+            source_path="raw/myapp/deploy_guide.md",
+            source_sha256="abc123",
+            source_section="## Redis",
+            quote="Redis 7.2 is used for caching",
+            normalized="Redis 7.2 используется для кеширования",
+            related_slugs=["myapp/redis"],
+            confidence=0.9,
+            status="active",
+            chunk_id="chunk-001",
+            project="myapp",
+            created="2026-06-13",
+        )
+
+        result = format_claims_for_context([claim])
+
+        assert "[[_claims/myapp/myapp__deploy_guide/chunk-001/chunk-001-claim-001]]" in result
+        assert "Redis 7.2 используется" in result
+        assert "Relevant Claims" in result
+
+    def test_empty_claims(self):
+        from app.agents.query_search import format_claims_for_context
+
+        assert format_claims_for_context([]) == ""

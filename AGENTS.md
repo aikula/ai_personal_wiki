@@ -15,7 +15,13 @@ wiki-engine/
 ├── app/
 │   ├── agents/
 │   │   ├── ingest_agent.py       # Plan-and-Execute ingest pipeline
+│   │   ├── ingest_helpers.py     # Standalone ingest helper functions
+│   │   ├── ingest_prompts.py     # Ingest prompt templates
+│   │   ├── ingest_types.py       # Ingest type definitions
 │   │   ├── query_agent.py        # Policy-driven ReAct query agent
+│   │   ├── query_search.py       # Standalone query search/retrieval helpers
+│   │   ├── query_prompts.py      # Query prompt templates
+│   │   ├── query_types.py        # Query type definitions
 │   │   └── audit_agent.py        # Parallel structural audit
 │   ├── core/
 │   │   ├── wiki_fs.py            # All filesystem operations (single source of truth)
@@ -489,4 +495,4 @@ All other files MUST stay under 500 lines. When modifying a file that exceeds th
 
 No current violations. Resolved:
 - `app/agents/ingest_agent.py` 761→449 lines — split into `ingest_types.py` (52), `ingest_prompts.py` (109), `ingest_helpers.py` (121), `ingest_agent.py` (449)
-- `app/agents/query_agent.py` 542→404 lines — split into `query_types.py` (40), `query_prompts.py` (83), `query_agent.py` (404)
+- `app/agents/query_agent.py` 729→424 lines — split into `query_types.py` (51), `query_prompts.py` (114), `query_search.py` (381), `query_agent.py` (424)

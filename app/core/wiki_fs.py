@@ -2131,7 +2131,7 @@ created: {today}
         for page in all_pages:
             if page.page_type in ("index", "log"):
                 continue
-            original = page.raw_content
+            original = page.raw
             page_path = self._slug_to_path(page.slug)
 
             def _fix_link(match: re.Match) -> str:

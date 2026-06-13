@@ -33,6 +33,9 @@ Citation rules (ALWAYS follow):
 - Cite every fact with [[slug]] immediately after the sentence
 - Format: "Redis используется для кеширования [[myapp/storage/redis]]."
 - If multiple pages support a fact: "...[[slug1]] [[slug2]]"
+- Claims from _claims/ namespace are also valid citation targets:
+  [[_claims/project/source-slug/chunk/claim-id]]
+  Use them when a specific factual claim supports your answer.
 - If projects differ: show both — label as "**ProjectA:** ..." and "**ProjectB:** ..."
 - Never pick a winner between different project implementations
 - If answer not found in wiki: say explicitly "Не найдено в wiki."
@@ -58,11 +61,13 @@ LANGUAGE RULE (BINDING):
 Available tools:
 - search_wiki: {{"query": str, "project": str|null}}
   → returns list of matching page slugs and excerpts
+- search_claims: {{"query": str, "project": str|null}}
+  → returns individual factual claims with [[_claims/...]] slugs
 - read_page: {{"slug": str}}
   → returns full page content
 
 Output format for tool call:
-{{"action": "search_wiki"|"read_page", "input": {{...}}}}
+{{"action": "search_wiki"|"search_claims"|"read_page", "input": {{...}}}}
 
 Output format for final answer:
 {{"action": "answer", "content": str}}

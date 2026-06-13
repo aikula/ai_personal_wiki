@@ -17,7 +17,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.agents.audit_agent import AuditAgent
 from app.agents.ingest_agent import IngestAgent
-from app.agents.query_agent import ChatSession, QueryAgent
+from app.agents.query_agent import QueryAgent
+from app.agents.query_types import ChatSession
 from app.api.session_store import SessionStore
 from app.config import Settings
 from app.core.context import WorkspaceContext, personal_local_context, personal_server_context
