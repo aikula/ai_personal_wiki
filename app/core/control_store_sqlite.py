@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING
 import bcrypt
 
 from app.core.control_store import (
-    ControlStore,
     CreditState,
     InsufficientCreditsError,
     UsageEvent,

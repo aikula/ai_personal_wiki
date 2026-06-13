@@ -14,7 +14,6 @@ Checks (all in-process, no LLM, no writes):
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from app.core.linter_models import LintIssue
 

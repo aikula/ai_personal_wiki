@@ -33,8 +33,8 @@ import re
 from datetime import date, datetime
 
 from app.config import Settings
-from app.core.linter_models import LintIssue, LintReport
 from app.core.linter_checks_sources import check_claims, check_planned_pages, check_source_drift
+from app.core.linter_models import LintIssue, LintReport
 from app.core.wiki_fs import WikiFS, WikiPage
 
 # ─────────────────────────────────────────────

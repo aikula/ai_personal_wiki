@@ -90,6 +90,11 @@ If contradictions are found between sources, they appear in the **Conflicts** ta
 3. Preview extracted skill
 4. Confirm — the system applies changes and adds the rule to `skills.md`
 
+To update a wiki page from a resolved conflict:
+1. **Prepare update**: LLM generates candidate content, diff is shown
+2. **Apply update**: applies stored candidate (NO repeated LLM call)
+3. **Reject update**: deletes draft without modifying the page
+
 ### 5. Rebuild when needed
 The **🔄 Rebuild** button reprocesses all source files from `raw/`. Useful after:
 — Changing source documents
@@ -279,7 +284,7 @@ ollama run qwen2.5:14b
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/ingest` | Upload single file |
-| `POST` | `/api/ingest/batch` | Upload multiple files |
+| `POST` | `/api/ingest/batch` | Upload multiple files (form-data: `project` + `files[]` or `file[]`). Empty batch → 400 |
 | `POST` | `/api/ingest/rebuild` | Rebuild wiki from raw (SSE) |
 | `POST` | `/api/ingest/clear` | Reset wiki to clean state |
 | `GET` | `/api/ingest/raw` | List raw files |

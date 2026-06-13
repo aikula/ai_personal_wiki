@@ -2,7 +2,7 @@
 control_store_noop.py — No-op ControlStore implementation for personal modes.
 """
 
-from app.core.control_store import ControlStore, CreditState, UsageEvent, UserRecord, WorkspaceRecord
+from app.core.control_store import CreditState, UsageEvent, UserRecord, WorkspaceRecord
 
 
 class NoopControlStore:
