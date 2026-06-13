@@ -42,6 +42,7 @@ from app.core.linter import WikiLinter
 from app.core.llm_client import LLMGateway
 from app.core.raw_sources import (
     RawSourceError,
+    infer_project_from_raw_relative_path,
     list_raw_source_files,
     read_raw_source_file,
 )
@@ -76,6 +77,7 @@ class IngestAgent:
         self.budget = ContextBudget(settings)
 
     def run(self, raw_relative_path: str, allow_draft: bool = True, cancel_event: threading.Event | None = None) -> IngestResult:
+        project = infer_project_from_raw_relative_path(raw_relative_path)
         try:
             source_content = read_raw_source_file(self.fs.raw_dir, raw_relative_path)
         except RawSourceError as exc:
@@ -83,7 +85,7 @@ class IngestAgent:
             return IngestResult(
                 success=False,
                 source_file=raw_relative_path,
-                project="_general",
+                project=project,
                 pages_created=[], pages_updated=[], pages_superseded=[],
                 conflict_ids=[], skills_triggered=[], lint_report=None,
                 error=str(exc),
@@ -93,7 +95,7 @@ class IngestAgent:
             return IngestResult(
                 success=False,
                 source_file=raw_relative_path,
-                project="_general",
+                project=project,
                 pages_created=[], pages_updated=[], pages_superseded=[],
                 conflict_ids=[], skills_triggered=[], lint_report=None,
                 error=f"Source file not found: {raw_relative_path}",

@@ -34,6 +34,25 @@ class RawSourceError(Exception):
     """Raised when a raw source exists but cannot be read or converted."""
 
 
+def infer_project_from_raw_relative_path(raw_relative_path: str) -> str:
+    """Infer project name from raw_relative_path BEFORE any I/O.
+
+    Used in error branches where file conversion/read failed and
+    ``get_raw_project`` is unavailable.
+
+    >>> infer_project_from_raw_relative_path("eywa-demo/bad.pdf")
+    'eywa-demo'
+    >>> infer_project_from_raw_relative_path("bad.pdf")
+    '_general'
+    >>> infer_project_from_raw_relative_path("a/b/c.md")
+    'a'
+    """
+    normalized = raw_relative_path.replace("\\", "/").strip("/")
+    if "/" not in normalized:
+        return "_general"
+    return normalized.split("/", 1)[0] or "_general"
+
+
 def _resolve_in_dir(base: Path, relative: str) -> Path:
     candidate = (base / relative).resolve()
     base_resolved = base.resolve()

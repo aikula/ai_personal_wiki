@@ -266,3 +266,26 @@ class TestIngestAgentErrors:
 
         assert result.success is True
         assert "myapp/config" in result.pages_created
+
+    def test_conversion_error_preserves_project(self, settings, fs, monkeypatch):
+        """When read_raw_source_file raises RawSourceError, project should be correct."""
+        def _raise(*a, **kw):
+            raise __import__("app.core.raw_sources", fromlist=["RawSourceError"]).RawSourceError("conversion failed")
+        monkeypatch.setattr("app.agents.ingest_agent.read_raw_source_file", _raise)
+        llm = MagicMock()
+        interpreter = MagicMock()
+        agent = IngestAgent(fs, llm, interpreter, settings)
+        result = agent.run("eywa-demo/bad.pdf")
+        assert result.success is False
+        assert result.project == "eywa-demo"
+        assert "conversion failed" in result.error
+
+    def test_missing_source_preserves_project(self, settings, fs, monkeypatch):
+        """When read_raw_source_file returns None, project should be correct."""
+        monkeypatch.setattr("app.agents.ingest_agent.read_raw_source_file", lambda *a, **kw: None)
+        llm = MagicMock()
+        interpreter = MagicMock()
+        agent = IngestAgent(fs, llm, interpreter, settings)
+        result = agent.run("eywa-demo/missing.md")
+        assert result.success is False
+        assert result.project == "eywa-demo"

@@ -183,7 +183,7 @@ def run_large_ingest(
 ) -> IngestResult:
     source_id = slugify(raw_relative_path.replace("/", "_", 1).rsplit(".", 1)[0])
     if not source_id:
-        return IngestResult(success=False, error=f"Invalid filename for source_id: {raw_relative_path}")
+        return IngestResult(success=False, project=project, error=f"Invalid filename for source_id: {raw_relative_path}")
     sha256 = fs.compute_source_sha256(source_content)
     today = date.today().isoformat()
 
