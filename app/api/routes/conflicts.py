@@ -17,6 +17,7 @@ import asyncio
 import difflib
 import json
 import re
+import shutil
 from typing import Annotated
 
 import frontmatter
@@ -96,7 +97,6 @@ async def resolve_conflict(
 
     skill = ""
     if body.extract_skill:
-        import asyncio
         skill = await asyncio.to_thread(
             agent.extract_skill_from_resolution,
             conflict_id,
@@ -280,7 +280,6 @@ async def apply_conflict_update(
     fs.rebuild_index()
 
     # Remove draft
-    import shutil
     shutil.rmtree(draft_dir)
 
     return {
@@ -300,7 +299,6 @@ async def reject_conflict_update(
     draft_dir = fs.drafts_dir / draft_id
     if not draft_dir.exists():
         raise HTTPException(404, f"Draft для {conflict_id} не найден")
-    import shutil
     shutil.rmtree(draft_dir)
     return {"success": True, "conflict_id": conflict_id, "message": "Draft удалён."}
 

@@ -69,7 +69,7 @@
 ```powershell
 python -m uvicorn app.api.main:app --reload --port 8000
 ```
-Откройте `http://localhost:8000`.
+Откройте `http://localhost:8000`. UI работает офлайн — React и Babel лежат локально в `app/ui/vendor/`, без CDN.
 
 ### 2. Загрузите документы
 Нажмите **📂 Загрузить** в верхней панели. Выберите проект и файлы. Система автоматически:
@@ -273,6 +273,15 @@ Wiki Engine поддерживает три режима (`APP_MODE`):
 | `POST` | `/api/ingest/clear` | Сброс wiki в исходное состояние |
 | `GET` | `/api/ingest/raw` | Список raw-файлов |
 | `GET/POST` | `/api/ingest/drafts/*` | Работа с черновиками |
+
+Пример batch-загрузки:
+```bash
+curl -X POST http://localhost:8000/api/ingest/batch \
+  -F "project=myapp" \
+  -F "files=@docs/readme.md" \
+  -F "files=@docs/api.md"
+```
+Поля ответа: `total`, `processed`, `skipped`, `successes`, `failures`, `details`, `skipped_details`.
 
 ### Chat
 | Метод | Путь | Описание |

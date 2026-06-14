@@ -69,7 +69,7 @@ See [`docs/corporate_edition_roadmap.md`](docs/corporate_edition_roadmap.md) for
 ```powershell
 python -m uvicorn app.api.main:app --reload --port 8000
 ```
-Open `http://localhost:8000`.
+Open `http://localhost:8000`. UI works offline — React and Babel are vendored locally in `app/ui/vendor/`, no CDN.
 
 ### 2. Upload documents
 Click **📂 Upload** in the header. Select a project and files. The system will:
@@ -289,6 +289,15 @@ ollama run qwen2.5:14b
 | `POST` | `/api/ingest/clear` | Reset wiki to clean state |
 | `GET` | `/api/ingest/raw` | List raw files |
 | `GET/POST` | `/api/ingest/drafts/*` | Draft operations |
+
+Batch upload example:
+```bash
+curl -X POST http://localhost:8000/api/ingest/batch \
+  -F "project=myapp" \
+  -F "files=@docs/readme.md" \
+  -F "files=@docs/api.md"
+```
+Response fields: `total`, `processed`, `skipped`, `successes`, `failures`, `details`, `skipped_details`.
 
 ### Chat
 | Method | Path | Description |
