@@ -49,7 +49,9 @@ def fix_broken_wikilinks(fs, project: str | None = None) -> int:
                 return full
             normalized = _normalize_slug(target)
             if normalized in existing_slugs:
-                return f"[[{normalized}]]"
+                anchor = f"#{m.group(3)}" if m.group(2) else ""
+                display_part = f"|{display}" if display else ""
+                return f"[[{normalized}{anchor}{display_part}]]"
             return display if display else ""
 
         new_content = wikilink_re.sub(_fix_link, original)

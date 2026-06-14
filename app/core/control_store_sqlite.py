@@ -10,7 +10,6 @@ import secrets
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import bcrypt
 
@@ -21,9 +20,6 @@ from app.core.control_store import (
     UserRecord,
     WorkspaceRecord,
 )
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger("wiki.control")
 

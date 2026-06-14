@@ -21,9 +21,9 @@ from app.agents.ingest_types import IngestResult
 from app.config import language_instruction
 from app.core.large_source_ingest import (
     chunk_by_outline,
-    merge_analysis,
     parse_outline,
 )
+from app.core.large_source_merge import merge_analysis
 from app.core.large_source_types import Chunk, ChunkAnalysisResult
 from app.core.linter import WikiLinter
 from app.core.metered_llm_client import QuotaExceededError

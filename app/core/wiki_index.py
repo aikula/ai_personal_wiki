@@ -197,8 +197,9 @@ def update_index_entry(fs, slug: str, meta: dict) -> None:
 
     project = meta.get("project", "_general")
     if f"## {project}" not in new_content:
+        proj_count = len([p for p in pages if p.project == project])
         new_content += (
-            f"\n## {project}\n"
+            f"\n## {project} ({proj_count} pages)\n"
             f"[[{project}/index]] — project {project}\n"
         )
 
